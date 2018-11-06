@@ -2,9 +2,10 @@
 This repository were modified from soybean_rhizosphere_microbiome repository to make it into a systemic one
 
 
-#### paper title: Soil indigenous microbiome and plant genotypes cooperatively modify soybean rhizosphere microbiome assembly
+**Paper title**: Soil indigenous microbiome and plant genotypes cooperatively modify soybean rhizosphere microbiome assembly
   
 > Date 11-04-2018 . 
+
 > Author Fang Liu . 
 
 This is the documentation about the whole project, including experiment design, sequencing plan and data analysis.
