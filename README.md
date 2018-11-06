@@ -23,7 +23,7 @@ This is the documentation about the whole project, including experiment design, 
  * The 16S rRNA gene sequencing data were processed in Mothur to generate OTU count and taxonomy information following main the Miseq SOP pipeline.
  * For subsequent analysis purpose, subset, remove rare, make.lefse, rarefaction, etc commands were used for different purpose.
 
-** Further data analysis using R, shell command as well as python.
+**Further data analysis using R, shell command as well as python.**
 
  * For community analysis, including microbial composition, similarity as well as variantion analysis were done mainly using Phyloseq package of R.
 
