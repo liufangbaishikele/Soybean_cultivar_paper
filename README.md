@@ -36,3 +36,5 @@ This is the documentation about the whole project, including experiment design, 
  * For microbiome function investigation, Tax4Fun were used to predict the function potential by linking taxonomy information with pre-calculated&curated KEGG pathway.Significantly enriched or depleted metabolic pathway were summarized and visualized in heatmap after all unreasonable metabolic pathways were excluded from the dataset.
 
 **PS** Just as a reference, as some of the analysis were documented as CV1(WIL), CV2(DRT), CV3(CNR), CV4(NNW), CV5(SOJ) and CV6(W82).
+
+

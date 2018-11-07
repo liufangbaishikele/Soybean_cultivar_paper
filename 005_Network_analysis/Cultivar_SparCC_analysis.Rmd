@@ -1,0 +1,3471 @@
+---
+title: "Cultivat_SparCC3rd_analysis"
+author: "Fang Liu"
+date: "03/01/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+## set up working environment and load libraries
+```{r}
+setwd("/Users/fangliu/Documents/2016_cultivar_project/R_analysis/SparCC_3rd")
+library(phyloseq)
+library(igraph)
+library(plyr)
+```
+
+## Read into a whole .shared and cons.taxonomy file to define label factor 
+## This step is used to generate labels for each genus, which could be used to merge with four groups of vertex dataframe based on Genus name.
+
+```{r}
+
+# This rarefied shared file and constaxonomy file was generated in mothur at 19023 depth and removed all taxa that has sequence smaller than 10
+cultivar_phyloseq<-import_mothur(mothur_shared_file = "cultivar.trim.contigs.good.unique.good.filter.unique.precluster.pick.pick.opti_mcc.unique_list.0.03.subsample.0.03.pick.shared",mothur_constaxonomy_file = "cultivar.trim.contigs.good.unique.good.filter.unique.precluster.pick.pick.opti_mcc.unique_list.0.03.subsample.0.03.pick.0.03.cons.taxonomy")
+otu_table(cultivar_phyloseq)<-otu_table(cultivar_phyloseq)[,c(1,5:12,2:4,13,15:22,14,23:68,69,73:80,70:72,81,83:90,82,91:136)]
+colnames(tax_table(cultivar_phyloseq))=c('Kingdom','Phylum','Class','Order','Family','Genus')
+cultivar_phyloseq
+
+CV_meta<-read.csv("cultivar_meta.csv",head=TRUE,row.names = 1)
+#CV_meta<-cbind(CV_meta,Treat=paste(CV_meta$Soil_type,CV_meta$Treatment,sep="_"))
+CV_meta<-data.frame(CV_meta,Read_depth=sample_sums(cultivar_phyloseq))
+identical(rownames(CV_meta),sample_names(cultivar_phyloseq))
+dim(CV_meta)
+head(CV_meta)
+CV_meta_phyloseq<-sample_data(CV_meta)
+
+# cultivar_phyloseq
+cultivar_phyloseq<-merge_phyloseq(cultivar_phyloseq,CV_meta_phyloseq)
+cultivar_phyloseq
+
+# creat label vector
+
+cultivar_meta<-data.frame(label=1:9314,OtuID=taxa_names(cultivar_phyloseq),Phylum=tax_table(cultivar_phyloseq)[,2])
+head(cultivar_meta)
+```
+
+
+
+-----------------------------------
+#        Ag_soil dataset
+-----------------------------------
+
+## prepare the dataset as input for SparCC
+
+```{r}
+Ag_soil_phyloseq<-subset_samples(cultivar_phyloseq,Group=="AgS")
+Ag_soil_phyloseq
+summary(taxa_sums(Ag_soil_phyloseq)>=50)
+Ag_soil_phyloseq<-filter_taxa(Ag_soil_phyloseq,function(x) sum(x)>=50,prune = TRUE)
+Ag_soil_phyloseq # 1100 taxa left across 17 samples
+Ag_soil_OTU_SparCC<-data.frame(row.names(tax_table(Ag_soil_phyloseq)),otu_table(Ag_soil_phyloseq))
+#write.csv(Ag_soil_OTU_SparCC, file = "Ag_soil_OTU_SparCC.csv",row.names = TRUE)
+```
+
+#######################################################################################
+# Calculation of SparCC correlation was done on server following SparCC documentation #                       
+#######################################################################################
+
+## import SparCC and p_value matrix into R 
+
+```{r}
+# Read in SparCC correlation matrix
+Ag_soil_SparCC_cor<-read.csv("/Users/fangliu/Documents/2016_cultivar_project/R_analysis/SparCC_3rd/Ag_soil_OTU_cor_sparcc.csv",header = TRUE,row.names = 1)
+Ag_soil_SparCC_cor<-as.matrix(Ag_soil_SparCC_cor)
+dim(Ag_soil_SparCC_cor)
+Ag_soil_SparCC_cor[1:5,1:5]
+
+# Read in corresponding p_value dataframe
+Ag_soil_SparCC_pvalue<-read.csv("/Users/fangliu/Documents/2016_cultivar_project/R_analysis/SparCC_3rd/Ag_soil_OTU_two_sided_pvalue.csv",header = TRUE,row.names = 1)
+Ag_soil_SparCC_pvalue<-as.matrix(Ag_soil_SparCC_pvalue)
+dim(Ag_soil_SparCC_pvalue)
+Ag_soil_SparCC_pvalue[1:5,1:5]
+```
+
+
+## Generate vertices information and add relative abundance information to vertices and color information
+
+
+```{r}
+r_Ag_soil_phyloseq<-transform_sample_counts(Ag_soil_phyloseq,function(x) x/sum(x))
+
+Ag_soil_vertex<-data.frame(OtuID=taxa_names(r_Ag_soil_phyloseq),tax_table(r_Ag_soil_phyloseq),size=taxa_sums(r_Ag_soil_phyloseq)/length(sample_sums(r_Ag_soil_phyloseq))) # Here size are the average relative abundance of each OTU across all samples within same treatment
+dim(Ag_soil_vertex)
+Ag_soil_vertex[1:5,]
+Ag_soil_vertex<-Ag_soil_vertex[,c(1,3,7,8)]
+head(Ag_soil_vertex)
+levels<-factor(c("Bacteria_unclassified","Planctomycetes","Verrucomicrobia","Proteobacteria","Acidobacteria","Bacteroidetes","Actinobacteria","TM7","Gemmatimonadetes","Chlamydiae","Firmicutes","Chloroflexi","OD1", "Armatimonadetes","Nitrospira","BRC1","WS3","Tenericutes","Spirochaetes"))
+
+labels<-c('#9b9696','#ffee32','#f2701a','#b6cc0e','#ed5567','#07aeba','#3a44ff','#f936f6','#723434','#8ae2cc','#316022','#85f785','#be85f7','#990101','#b105fc','#fc05ba','#fc0505','#210000','#bc883a')
+
+#tiff ('/Users/fangliu/Documents/2016_cultivar_project/R_analysis/SparCC_3rd/Phylum_color_pie_plot.tiff', units="in", width=12, height=8, res=300)
+#pie(rep(1,19),col=labels,labels = paste(levels,labels,sep=":"),radius = 1.0)
+#dev.off()
+
+Ag_soil_vertex$color<-factor(Ag_soil_vertex$Phylum,levels = levels,labels=labels)
+dim(Ag_soil_vertex)
+Ag_soil_vertex[1:20,]
+# I want to add label variable to Ag_soil_vertex
+Ag_soil_vertex<-join (Ag_soil_vertex,cultivar_meta,by="OtuID") 
+
+# Originally, I used merge function, but it turned out to be problematic, because after merge it will The rows are by default lexicographically sorted on the common columns. To resolve this problem, I changed merge function to joint function.
+dim(Ag_soil_vertex)
+Ag_soil_vertex[1:5,]
+```
+
+
+## Creat links and have a look at edge adn vertex information
+
+```{r}
+# read SparCC correlation matrix and p_value matrix to igraph
+Ag_soil_net<-graph_from_adjacency_matrix(Ag_soil_SparCC_cor,weighted = TRUE)
+Ag_soil_net  ## IGRAPH 6c213ff DNW- 1100 1210000 -- 
+summary(V(Ag_soil_net)$name==as.character(Ag_soil_vertex$OtuID)) 
+V(Ag_soil_net)$name[1:5]
+E(Ag_soil_net)$weight[1:5] # here the weight are just the SparCC coefficience
+
+# Add vertex information to the network
+V(Ag_soil_net)$vertex_color<-as.character(Ag_soil_vertex$color)
+V(Ag_soil_net)$size<-Ag_soil_vertex$size
+V(Ag_soil_net)$Phylum<-as.character(Ag_soil_vertex$Phylum)
+V(Ag_soil_net)$label<-as.character(Ag_soil_vertex$label)
+
+# Add edge information (p_value) to the network
+E(Ag_soil_net)$p_value<-Ag_soil_SparCC_pvalue
+E(Ag_soil_net)$p_value[1:10]
+
+## Add edge width to the network
+E(Ag_soil_net)$width<-E(Ag_soil_net)$weight*10
+E(Ag_soil_net)$width
+```
+
+
+------------------------------------------------------------------------------------------------------------------------------------------
+In order to simplify the network, including remove of loop and mutual edges. If using simplify function on Bulk_net, this will loose p_value and edge color information (which indicate if the interaction are negarive or positive)
+
+To solve this problem, I will write out the edge and vertices in dataframe format and read into these two dataframe and modify the edge information globally before use ``graph_from_data_frame`` to create network object.
+-----------------------------------------------------------------------------------------------------------------------------------------
+
+
+## write out edges and vertices in dataframe format, and edit on the network
+
+```{r}
+
+# -- generate edge dataframe from whole network---
+
+Ag_soil_edges<-as_data_frame(Ag_soil_net,what = "edges")
+#Ag_soil_edges
+dim(Ag_soil_edges) # 1210000 rows and 5 columns
+head(Ag_soil_edges)
+# Here the weight indicate the strength of interaction (SparCC value), p_value is the significance of interactions nad width is formulated based on weight * 40.
+
+# -- generate vertices dataframe from whole network---
+
+Ag_soil_vertices<-as_data_frame(Ag_soil_net,what = "vertices")
+dim(Ag_soil_vertices)
+head(Ag_soil_vertices)
+
+# remove edges that from and to the same nodes(selfloops)
+
+Ag_soil_edges<-Ag_soil_edges[which(Ag_soil_edges$from!=Ag_soil_edges$to),]
+dim(Ag_soil_edges) # 1208900 rows and 5 columns
+head(Ag_soil_edges)
+
+# Creat a new network using the above vertices and edge data frame
+Ag_soil_net1 <- graph_from_data_frame(d=Ag_soil_edges, vertices=Ag_soil_vertices, directed=T)#here if I used directed=FALSE, I will lost my p_value information as well as weight information. 
+Ag_soil_net1 # IGRAPH 6b09ac1 DNW- 1100 1208900 --
+E(Ag_soil_net1)$weight[1:10]
+
+# convert directed network to undirected network
+
+Ag_soil_net2<-as.undirected(Ag_soil_net1 ,mode = 'mutual',edge.attr.comb = "mean") # as a result, weight, p_value and width of edges are all averaged for mutual edges.
+Ag_soil_net2 # IGRAPH 07d4d19 UNW- 1100 604450 --
+E(Ag_soil_net2)$weight[1:10]
+E(Ag_soil_net2)$weight[1:10]
+E(Ag_soil_net2)$p_value[1:10]
+E(Ag_soil_net2)$width[1:10]
+
+
+## simplify the network from Ag_soil_net2
+
+#1)  remove non_significant edges with alpha=0.05
+
+summary(E(Ag_soil_net2)$p_value<0.05) #TRUE 74374 and FALSE 530076   
+
+Ag_soil_net3<-delete.edges(Ag_soil_net2,which(E(Ag_soil_net2)$p_value>=0.05))
+Ag_soil_net3 # IGRAPH 367f362 UNW- 1100 74374 --
+summary(degree(Ag_soil_net3)==0) # all of the nodes has connection to others
+summary(E(Ag_soil_net3)$weight>0) # 1518 positive interactions, 1466 nagative interactions
+
+#2) remove non-significant edges with alpha=0.001
+
+summary(E(Ag_soil_net2)$p_value<0.001) # TRUE 14033, FALSE 590417
+Ag_soil_net4<-delete.edges(Ag_soil_net2,which(E(Ag_soil_net2)$p_value>=0.001))
+Ag_soil_net4 # IGRAPH f0f24bb UNW- 1100 14033 --
+Ag_soil_net4<-delete.vertices(Ag_soil_net4,degree(Ag_soil_net4)==0) # IGRAPH 43447ba UNW- 1093 14033 -
+
+#3) further simplify the network based on degree
+barplot(sort(degree(Ag_soil_net4)),main = "Ag_soil_net4_barplot")
+summary(degree(Ag_soil_net4)>100) # 36 nodes with degree larger than 100
+Ag_soil_net5<-delete.vertices(Ag_soil_net4,which(degree(Ag_soil_net4)<=100))
+Ag_soil_net5# IGRAPH ce4509d UNW- 36 536 --
+summary(E(Ag_soil_net5)$weight>0) # 261 positive and 275 negative
+
+# top 50
+
+Ag_soil_net6<-delete.vertices(Ag_soil_net4,labels(sort(degree(Ag_soil_net4),FALSE)[c(1:(length(V(Ag_soil_net4)$name)-50))])) # IGRAPH 56796e5 UNW- 50 937 --
+Ag_soil_net6<-delete.vertices(Ag_soil_net6,degree(Ag_soil_net6)==0)
+summary(E(Ag_soil_net6)$weight>0) # logical : 483(negative)     454(positive)
+
+# top100
+Ag_soil_net7<-delete.vertices(Ag_soil_net4,labels(sort(degree(Ag_soil_net4),FALSE)[c(1:(length(V(Ag_soil_net4)$name)-100))]))
+Ag_soil_net7<-delete.vertices(Ag_soil_net7,degree(Ag_soil_net7)==0)
+summary(E(Ag_soil_net7)$weight>0) # 1273 (negative)    1228 (positive) 
+```
+
+
+## Plot network
+
+```{r}
+
+tiff('/Users/fangliu/Documents/2016_cultivar_project/R_analysis/SparCC_3rd/Ag_soil_net4.tiff', units="in", width=10, height=8, res=300)
+
+plot(Ag_soil_net4,edge.arrow.size=0,edge.width=abs(E(Ag_soil_net4)$width/4),vertex.color=V(Ag_soil_net4)$vertex_color,vertex.frame.color="#555555",vertex.label=NA,edge.color=c("#ff8989","#9fe899")[1+(E(Ag_soil_net4)$weight>0)],vertex.size=degree(Ag_soil_net4)/10,layout=layout_with_fr (Ag_soil_net4),main="Ag_soil_net4") # green edges means positive correlation and red edges mean negative correlation
+
+dev.off()
+
+plot(Ag_soil_net5,edge.arrow.size=0,edge.width=abs(E(Ag_soil_net5)$width/3),vertex.color=V(Ag_soil_net5)$vertex_color,vertex.frame.color="#555555",vertex.label=V(Ag_soil_net5)$label,edge.color=c("#ff8989","#9fe899")[1+(E(Ag_soil_net5)$weight>0)],vertex.label.cex=.8,vertex.size=degree(Ag_soil_net5)/2,layout=layout_with_dh (Ag_soil_net5),main="Ag_soil_net5")
+
+tiff('/Users/fangliu/Documents/2016_cultivar_project/R_analysis/SparCC_3rd/Ag_soil_net6.tiff', units="in", width=10, height=8, res=300)
+plot(Ag_soil_net6,edge.arrow.size=0,edge.width=abs(E(Ag_soil_net6)$width/3),vertex.color=V(Ag_soil_net6)$vertex_color,vertex.frame.color="#555555",vertex.label=V(Ag_soil_net6)$label,vertex.label.color="black",vertex.label.cex=.8,vertex.label.font=2,vertex.label.dist=0,edge.color=c("#ff8989","#9fe899")[1+(E(Ag_soil_net6)$weight>0)],vertex.size=degree(Ag_soil_net6)/3,layout=layout_with_dh (Ag_soil_net6),main="Ag_soil_net6")
+dev.off()
+
+tiff('/Users/fangliu/Documents/2016_cultivar_project/R_analysis/SparCC_3rd/Ag_soil_net7.tiff', units="in", width=10, height=8, res=300)
+plot(Ag_soil_net7,edge.arrow.size=0,edge.width=abs(E(Ag_soil_net7)$width/3),vertex.color=V(Ag_soil_net7)$vertex_color,vertex.frame.color="#555555",vertex.label=V(Ag_soil_net7)$label,vertex.label.color="black",vertex.label.cex=.8,vertex.label.font=2,vertex.label.dist=0,edge.color=c("#ff8989","#9fe899")[1+(E(Ag_soil_net7)$weight>0)],vertex.size=degree(Ag_soil_net7)/3,layout=layout_with_dh (Ag_soil_net7),main="Ag_soil_net7")
+dev.off()
+```
+
+
+-----------------------------------
+#        Ag_CV1 dataset
+-----------------------------------
+
+## prepare the dataset as input for SparCC
+
+```{r}
+Ag_WIL_phyloseq<-subset_samples(cultivar_phyloseq,Treat=="Agriculture_WIL")
+Ag_WIL_phyloseq
+sort(taxa_sums(Ag_WIL_phyloseq),TRUE)[1100]
+Ag_WIL_phyloseq<-filter_taxa(Ag_WIL_phyloseq,function(x) sum(x)>=28,prune = TRUE)
+Ag_WIL_phyloseq
+Ag_WIL_OTU_SparCC<-data.frame(row.names(tax_table(Ag_WIL_phyloseq)),otu_table(Ag_WIL_phyloseq))
+#write.csv(Ag_CV1_OTU_SparCC, file = "Ag_CV1_OTU_SparCC.csv",row.names = TRUE)
+```
+
+
+## import SparCC and p_value matrix into R 
+
+```{r}
+# Read in SparCC correlation matrix
+Ag_WIL_SparCC_cor<-read.csv("Ag_CV1_OTU_cor_sparcc.csv",header = TRUE,row.names = 1)
+Ag_WIL_SparCC_cor<-as.matrix(Ag_WIL_SparCC_cor)
+dim(Ag_WIL_SparCC_cor)
+Ag_WIL_SparCC_cor[1:5,1:5]
+
+# Read in corresponding p_value dataframe
+Ag_WIL_SparCC_pvalue<-read.csv("Ag_CV1_OTU_two_sided_pvalue.csv",header = TRUE,row.names = 1)
+Ag_WIL_SparCC_pvalue<-as.matrix(Ag_WIL_SparCC_pvalue)
+dim(Ag_WIL_SparCC_pvalue)
+Ag_WIL_SparCC_pvalue[1:5,1:5]
+```
+
+
+## Generate vertices information and add relative abundance information to vertices and color information
+
+
+```{r}
+r_Ag_WIL_phyloseq<-transform_sample_counts(Ag_WIL_phyloseq,function(x) x/sum(x))
+
+Ag_WIL_vertex<-data.frame(OtuID=taxa_names(r_Ag_WIL_phyloseq),tax_table(r_Ag_WIL_phyloseq),size=taxa_sums(r_Ag_WIL_phyloseq)/length(sample_sums(r_Ag_WIL_phyloseq))) # Here size are the average relative abundance of each OTU across all samples within same treatment
+dim(Ag_WIL_vertex)
+Ag_WIL_vertex[1:5,]
+Ag_WIL_vertex<-Ag_WIL_vertex[,c(1,3,7,8)]
+head(Ag_WIL_vertex)
+levels<-factor(c("Bacteria_unclassified","Planctomycetes","Verrucomicrobia","Proteobacteria","Acidobacteria","Bacteroidetes","Actinobacteria","TM7","Gemmatimonadetes","Chlamydiae","Firmicutes","Chloroflexi","OD1", "Armatimonadetes","Nitrospira","BRC1","WS3","Tenericutes","Spirochaetes"))
+
+labels<-c('#9b9696','#ffee32','#f2701a','#b6cc0e','#ed5567','#07aeba','#3a44ff','#f936f6','#723434','#8ae2cc','#316022','#85f785','#be85f7','#990101','#b105fc','#fc05ba','#fc0505','#210000','#bc883a')
+
+#tiff ('Phylum_color_pie_plot.tiff', units="in", width=10, height=8, res=300)
+#pie(rep(1,19),col=labels,labels = levels,radius = 1.0)
+#dev.off()
+
+Ag_WIL_vertex$color<-factor(Ag_WIL_vertex$Phylum,levels = levels,labels=labels)
+dim(Ag_WIL_vertex)
+Ag_WIL_vertex[1:5,]
+
+Ag_WIL_vertex<-join (Ag_WIL_vertex,cultivar_meta,by="OtuID") # Originally, I used merge function, but it turned out to be problematic, because after merge it will The rows are by default lexicographically sorted on the common columns. To resulve this problem, I changed merge function to joint function.
+
+dim(Ag_WIL_vertex)
+Ag_WIL_vertex[1:5,]
+```
+
+
+## Creat links and have a look at edge and vertex information
+
+```{r}
+# read SparCC correlation matrix and p_value matrix to igraph
+Ag_WIL_net<-graph_from_adjacency_matrix(Ag_WIL_SparCC_cor,weighted = TRUE)
+Ag_WIL_net  ## IGRAPH a8f6399 DNW- 1085 1177225 -- 
+summary(V(Ag_WIL_net)$name==as.character(Ag_WIL_vertex$OtuID)) 
+V(Ag_WIL_net)$name[1:5]
+E(Ag_WIL_net)$weight[1:5] # here the weight are just the SparCC coefficience
+
+# Add vertex information to the network
+V(Ag_WIL_net)$vertex_color<-as.character(Ag_WIL_vertex$color)
+V(Ag_WIL_net)$size<-Ag_WIL_vertex$size
+V(Ag_WIL_net)$Phylum<-as.character(Ag_WIL_vertex$Phylum)
+V(Ag_WIL_net)$label<-as.character(Ag_WIL_vertex$label)
+
+# Add edge information (p_value) to the network
+E(Ag_WIL_net)$p_value<-Ag_WIL_SparCC_pvalue
+E(Ag_WIL_net)$p_value[1:10]
+
+## Add edge width to the network
+E(Ag_WIL_net)$width<-E(Ag_WIL_net)$weight*10
+E(Ag_WIL_net)$width
+```
+
+
+------------------------------------------------------------------------------------------------------------------------------------------
+In order to simplify the network, including remove of loop and mutual edges. If using simplify function on Bulk_net, this will loose p_value and edge color information (which indicate if the interaction are negarive or positive)
+
+To solve this problem, I will write out the edge and vertices in dataframe format and read into these two dataframe and modify the edge information globally before use ``graph_from_data_frame`` to create network object.
+-----------------------------------------------------------------------------------------------------------------------------------------
+
+
+## write out edges and vertices in dataframe format, and edit on the network
+
+```{r}
+# -- generate edge dataframe from whole network---
+
+Ag_WIL_edges<-as_data_frame(Ag_WIL_net,what = "edges")
+#Ag_WIL_edges
+dim(Ag_WIL_edges) # 1177225 rows and 5 columns
+head(Ag_WIL_edges)
+# Here the weight indicate the strength of interaction (SparCC value), p_value is the significance of interactions nad width is formulated based on weight * 40.
+
+# -- generate vertices dataframe from whole network---
+
+Ag_WIL_vertices<-as_data_frame(Ag_WIL_net,what = "vertices")
+dim(Ag_WIL_vertices)
+head(Ag_WIL_vertices)
+
+# remove edges that from and to the same nodes(selfloops)
+
+Ag_WIL_edges<-Ag_WIL_edges[which(Ag_WIL_edges$from!=Ag_WIL_edges$to),]
+dim(Ag_WIL_edges) # 1208900 rows and 5 columns
+head(Ag_WIL_edges)
+
+# Creat a new network using the above vertices and edge data frame
+Ag_WIL_net1 <- graph_from_data_frame(d=Ag_WIL_edges, vertices=Ag_WIL_vertices, directed=T)#here if I used directed=FALSE, I will lost my p_value information as well as weight information. 
+Ag_WIL_net1 # IGRAPH 04499a6 DNW- 1085 1176140 --
+E(Ag_WIL_net1)$weight[1:10]
+
+# convert directed network to undirected network
+
+Ag_WIL_net2<-as.undirected(Ag_WIL_net1 ,mode = 'mutual',edge.attr.comb = "mean") # as a result, weight, p_value and width of edges are all averaged for mutual edges.
+Ag_WIL_net2 # IGRAPH 9584084 UNW- 1085 588070 --
+E(Ag_WIL_net2)$weight[1:10]
+E(Ag_WIL_net2)$weight[1:10]
+E(Ag_WIL_net2)$p_value[1:10]
+E(Ag_WIL_net2)$width[1:10]
+
+
+## simplify the network from Ag_WIL_net3
+
+#1)  remove non_significant edges with alpha=0.05
+
+summary(E(Ag_WIL_net2)$p_value<0.05) #TRUE 64679 and FALSE 523391   
+
+Ag_WIL_net3<-delete.edges(Ag_WIL_net2,which(E(Ag_WIL_net2)$p_value>=0.05))
+Ag_WIL_net3 # IGRAPH 6e9aac7 UNW- 1085 64679 --
+summary(degree(Ag_WIL_net3)==0) # all of the nodes has connection to others
+summary(E(Ag_WIL_net3)$weight>0) # 33204 positive interactions, 31475 nagative interactions
+
+#2) remove non-significant edges with alpha=0.001
+
+summary(E(Ag_WIL_net2)$p_value<0.001) # TRUE 8952 , FALSE 579118
+Ag_WIL_net4<-delete.edges(Ag_WIL_net2,which(E(Ag_WIL_net2)$p_value>=0.001))
+Ag_WIL_net4 # IGRAPH 3f6bedc UNW- 1085 8952 --
+Ag_WIL_net4<-delete.vertices(Ag_WIL_net4,degree(Ag_WIL_net4)==0) # IGRAPH e2e43af UNW- 1064 8952 --
+
+#3) further simplify the network based on degree
+barplot(sort(degree(Ag_WIL_net4)),main = "Ag_WIL_net4_barplot")
+summary(degree(Ag_WIL_net4)>100) # 31 nodes with degree larger than 20
+Ag_WIL_net5<-delete.vertices(Ag_WIL_net4,which(degree(Ag_WIL_net4)<=100))
+Ag_WIL_net5# IGRAPH ce4509d UNW- 36 536 --
+summary(E(Ag_WIL_net5)$weight>0) # 158 positive and 134 negative
+
+# top 50
+
+Ag_WIL_net6<-delete.vertices(Ag_WIL_net4,labels(sort(degree(Ag_WIL_net4),FALSE)[c(1:(length(V(Ag_WIL_net4)$name)-50))]))
+summary(E(Ag_WIL_net6)$weight>0)
+
+# top100
+Ag_WIL_net7<-delete.vertices(Ag_WIL_net4,labels(sort(degree(Ag_WIL_net4),FALSE)[c(1:(length(V(Ag_WIL_net4)$name)-100))]))
+Ag_WIL_net7<-delete.vertices(Ag_WIL_net7,degree(Ag_WIL_net7)==0)
+summary(E(Ag_WIL_net7)$weight>0)
+```
+
+
+## Plot network
+
+```{r}
+
+tiff('/Users/fangliu/Documents/2016_cultivar_project/R_analysis/SparCC_3rd/Ag_WIL_net4.tiff', units="in", width=10, height=8, res=300)
+
+plot(Ag_WIL_net4,edge.arrow.size=0,edge.width=abs(E(Ag_WIL_net4)$width/4),vertex.color=V(Ag_WIL_net4)$vertex_color,vertex.frame.color="#555555",vertex.label=NA,edge.color=c("#ff8989","#9fe899")[1+(E(Ag_WIL_net4)$weight>0)],vertex.size=degree(Ag_WIL_net4)/10,layout=layout_with_fr (Ag_WIL_net4),main="Ag_WIL_net4") # green edges means positive correlation and red edges mean negative correlation
+dev.off()
+
+#plot(Ag_WIL_net5,edge.arrow.size=0,edge.width=abs(E(Ag_WIL_net5)$width/3),vertex.color=V(Ag_WIL_net5)$vertex_color,vertex.frame.color="#555555",vertex.label=V(Ag_WIL_net5)$label,edge.color=c("#ff8989","#9fe899")[1+(E(Ag_WIL_net5)$weight>0)],vertex.label.cex=.8,vertex.size=degree(Ag_WIL_net5)/2,layout=layout_with_dh (Ag_WIL_net5),main="Ag_WIL_net5")
+
+tiff('/Users/fangliu/Documents/2016_cultivar_project/R_analysis/SparCC_3rd/Ag_WIL_net6.tiff', units="in", width=10, height=8, res=300)
+plot(Ag_WIL_net6,edge.arrow.size=0,edge.width=abs(E(Ag_WIL_net6)$width/3),vertex.color=V(Ag_WIL_net6)$vertex_color,vertex.frame.color="#555555",vertex.label=V(Ag_WIL_net6)$label,vertex.label.color="black",vertex.label.cex=.8,vertex.label.font=2,vertex.label.dist=0,edge.color=c("#ff8989","#9fe899")[1+(E(Ag_WIL_net6)$weight>0)],vertex.size=degree(Ag_WIL_net6)/3,layout=layout_with_dh (Ag_WIL_net6),main="Ag_WIL_net6")
+dev.off()
+
+tiff('/Users/fangliu/Documents/2016_cultivar_project/R_analysis/SparCC_3rd/Ag_WIL_net7.tiff', units="in", width=10, height=8, res=300)
+plot(Ag_WIL_net7,edge.arrow.size=0,edge.width=abs(E(Ag_WIL_net7)$width/3),vertex.color=V(Ag_WIL_net7)$vertex_color,vertex.frame.color="#555555",vertex.label=V(Ag_WIL_net7)$label,vertex.label.color="black",vertex.label.cex=.8,vertex.label.font=2,vertex.label.dist=0,edge.color=c("#ff8989","#9fe899")[1+(E(Ag_WIL_net7)$weight>0)],vertex.size=degree(Ag_WIL_net7)/3,layout=layout_with_dh (Ag_WIL_net7),main="Ag_WIL_net7")
+dev.off()
+```
+
+-----------------------------------
+#        Ag_CV2 dataset
+-----------------------------------
+
+## prepare the dataset as input for SparCC
+
+```{r}
+Ag_DRT_phyloseq<-subset_samples(cultivar_phyloseq,Treat=="Agriculture_DRT")
+Ag_DRT_phyloseq
+sort(taxa_sums(Ag_DRT_phyloseq),TRUE)[1100]
+Ag_DRT_phyloseq<-filter_taxa(Ag_DRT_phyloseq,function(x) sum(x)>=16,prune = TRUE)
+Ag_DRT_phyloseq
+Ag_DRT_OTU_SparCC<-data.frame(row.names(tax_table(Ag_DRT_phyloseq)),otu_table(Ag_DRT_phyloseq))
+#write.csv(Ag_CV2_OTU_SparCC, file = "Ag_CV2_OTU_SparCC.csv",row.names = TRUE)
+```
+
+
+## import SparCC and p_value matrix into R 
+
+```{r}
+# Read in SparCC correlation matrix
+Ag_DRT_SparCC_cor<-read.csv("Ag_CV2_OTU_cor_sparcc.csv",header = TRUE,row.names = 1)
+Ag_DRT_SparCC_cor<-as.matrix(Ag_DRT_SparCC_cor)
+dim(Ag_DRT_SparCC_cor)
+Ag_DRT_SparCC_cor[1:5,1:5]
+
+# Read in corresponding p_value dataframe
+Ag_DRT_SparCC_pvalue<-read.csv("Ag_CV2_OTU_two_sided_pvalue.csv",header = TRUE,row.names = 1)
+Ag_DRT_SparCC_pvalue<-as.matrix(Ag_DRT_SparCC_pvalue)
+dim(Ag_DRT_SparCC_pvalue)
+Ag_DRT_SparCC_pvalue[1:5,1:5]
+```
+
+
+## Generate vertices information and add relative abundance information to vertices and color information
+
+
+```{r}
+r_Ag_DRT_phyloseq<-transform_sample_counts(Ag_DRT_phyloseq,function(x) x/sum(x))
+
+Ag_DRT_vertex<-data.frame(OtuID=taxa_names(r_Ag_DRT_phyloseq),tax_table(r_Ag_DRT_phyloseq),size=taxa_sums(r_Ag_DRT_phyloseq)/length(sample_sums(r_Ag_DRT_phyloseq))) # Here size are the average relative abundance of each OTU across all samples within same treatment
+dim(Ag_DRT_vertex)
+Ag_DRT_vertex[1:5,]
+Ag_DRT_vertex<-Ag_DRT_vertex[,c(1,3,7,8)]
+head(Ag_DRT_vertex)
+levels<-factor(c("Bacteria_unclassified","Planctomycetes","Verrucomicrobia","Proteobacteria","Acidobacteria","Bacteroidetes","Actinobacteria","TM7","Gemmatimonadetes","Chlamydiae","Firmicutes","Chloroflexi","OD1", "Armatimonadetes","Nitrospira","BRC1","WS3","Tenericutes","Spirochaetes"))
+
+labels<-c('#9b9696','#ffee32','#f2701a','#b6cc0e','#ed5567','#07aeba','#3a44ff','#f936f6','#723434','#8ae2cc','#316022','#85f785','#be85f7','#990101','#b105fc','#fc05ba','#fc0505','#210000','#bc883a')
+
+#tiff ('Phylum_color_pie_plot.tiff', units="in", width=10, height=8, res=300)
+#pie(rep(1,19),col=labels,labels = levels,radius = 1.0)
+#dev.off()
+
+Ag_DRT_vertex$color<-factor(Ag_DRT_vertex$Phylum,levels = levels,labels=labels)
+dim(Ag_DRT_vertex)
+Ag_DRT_vertex[1:5,]
+
+Ag_DRT_vertex<-join (Ag_DRT_vertex,cultivar_meta,by="OtuID") # Originally, I used merge function, but it turned out to be problematic, because after merge it will The rows are by default lexicographically sorted on the common columns. To resulve this problem, I changed merge function to joint function.
+
+dim(Ag_DRT_vertex)
+Ag_DRT_vertex[1:5,]
+```
+
+
+## Creat links and have a look at edge and vertex information
+
+```{r}
+# read SparCC correlation matrix and p_value matrix to igraph
+Ag_DRT_net<-graph_from_adjacency_matrix(Ag_DRT_SparCC_cor,weighted = TRUE)
+Ag_DRT_net  #IGRAPH 6bc764f DNW- 1142 1304164 --  
+summary(V(Ag_DRT_net)$name==as.character(Ag_DRT_vertex$OtuID)) 
+V(Ag_DRT_net)$name[1:5]
+E(Ag_DRT_net)$weight[1:5] # here the weight are just the SparCC coefficience
+
+# Add vertex information to the network
+V(Ag_DRT_net)$vertex_color<-as.character(Ag_DRT_vertex$color)
+V(Ag_DRT_net)$size<-Ag_DRT_vertex$size
+V(Ag_DRT_net)$Phylum<-as.character(Ag_DRT_vertex$Phylum)
+V(Ag_DRT_net)$label<-as.character(Ag_DRT_vertex$label)
+
+# Add edge information (p_value) to the network
+E(Ag_DRT_net)$p_value<-Ag_DRT_SparCC_pvalue
+E(Ag_DRT_net)$p_value[1:10]
+
+## Add edge width to the network
+E(Ag_DRT_net)$width<-E(Ag_DRT_net)$weight*10
+E(Ag_DRT_net)$width
+```
+
+
+------------------------------------------------------------------------------------------------------------------------------------------
+In order to simplify the network, including remove of loop and mutual edges. If using simplify function on Bulk_net, this will loose p_value and edge color information (which indicate if the interaction are negarive or positive)
+
+To solve this problem, I will write out the edge and vertices in dataframe format and read into these two dataframe and modify the edge information globally before use ``graph_from_data_frame`` to create network object.
+-----------------------------------------------------------------------------------------------------------------------------------------
+
+
+## write out edges and vertices in dataframe format, and edit on the network
+
+```{r}
+
+# -- generate edge dataframe from whole network---
+
+Ag_DRT_edges<-as_data_frame(Ag_DRT_net,what = "edges")
+#Ag_DRT_edges
+dim(Ag_DRT_edges) # 1304164  rows and 5 columns
+head(Ag_DRT_edges)
+# Here the weight indicate the strength of interaction (SparCC value), p_value is the significance of interactions nad width is formulated based on weight * 40.
+
+# -- generate vertices dataframe from whole network---
+
+Ag_DRT_vertices<-as_data_frame(Ag_DRT_net,what = "vertices")
+dim(Ag_DRT_vertices)
+head(Ag_DRT_vertices)
+
+# remove edges that from and to the same nodes(selfloops)
+
+Ag_DRT_edges<-Ag_DRT_edges[which(Ag_DRT_edges$from!=Ag_DRT_edges$to),]
+dim(Ag_DRT_edges) # 1303022 rows and 5 columns
+head(Ag_DRT_edges)
+
+# Creat a new network using the above vertices and edge data frame
+Ag_DRT_net1 <- graph_from_data_frame(d=Ag_DRT_edges, vertices=Ag_DRT_vertices, directed=T)#here if I used directed=FALSE, I will lost my p_value information as well as weight information. 
+Ag_DRT_net1 # IGRAPH fd06eb2 DNW- 1142 1303022 -- 
+E(Ag_DRT_net1)$weight[1:10]
+
+# convert directed network to undirected network
+
+Ag_DRT_net2<-as.undirected(Ag_DRT_net1 ,mode = 'mutual',edge.attr.comb = "mean") # as a result, weight, p_value and width of edges are all averaged for mutual edges.
+Ag_DRT_net2 # IGRAPH 2947657 UNW- 1142 651511 --
+E(Ag_DRT_net2)$weight[1:10]
+E(Ag_DRT_net2)$weight[1:10]
+E(Ag_DRT_net2)$p_value[1:10]
+E(Ag_DRT_net2)$width[1:10]
+
+
+## simplify the network from Ag_DRT_net3
+
+#1)  remove non_significant edges with alpha=0.05
+
+summary(E(Ag_DRT_net2)$p_value<0.05) #TRUE 46852 and FALSE 604659  
+
+Ag_DRT_net3<-delete.edges(Ag_DRT_net2,which(E(Ag_DRT_net2)$p_value>=0.05))
+Ag_DRT_net3 # IGRAPH 257cd0f UNW- 1142 46852 -- 
+summary(degree(Ag_DRT_net3)==0) # all of the nodes has connection to others
+summary(E(Ag_DRT_net3)$weight>0) # 1518 positive interactions, 1466 nagative interactions
+
+#2) remove non-significant edges with alpha=0.001
+
+summary(E(Ag_DRT_net2)$p_value<0.001) # TRUE 4736, FALSE 646775
+Ag_DRT_net4<-delete.edges(Ag_DRT_net2,which(E(Ag_DRT_net2)$p_value>=0.001))
+Ag_DRT_net4 # IGRAPH 83d0e58 UNW- 1142 4736 --
+Ag_DRT_net4<-delete.vertices(Ag_DRT_net4,degree(Ag_DRT_net4)==0) # IGRAPH 522d944 UNW- 1119 4736 --
+
+#3) further simplify the network based on degree
+barplot(sort(degree(Ag_DRT_net4)),main = "Ag_DRT_net4_barplot")
+summary(degree(Ag_DRT_net4)>20) # 50 nodes with degree larger than 20
+Ag_DRT_net5<-delete.vertices(Ag_DRT_net4,which(degree(Ag_DRT_net4)<=20))
+Ag_DRT_net5# IGRAPH f1302a6 UNW- 50 134 --
+summary(E(Ag_DRT_net5)$weight>0) # 158 positive and 134 negative
+
+# top 50
+
+Ag_DRT_net6<-delete.vertices(Ag_DRT_net4,labels(sort(degree(Ag_DRT_net4),FALSE)[c(1:(length(V(Ag_DRT_net4)$name)-50))]))
+Ag_DRT_net6<-delete.vertices(Ag_DRT_net6,degree(Ag_DRT_net6)==0) # IGRAPH 0f8b3ef UNW- 48 134 --
+summary(E(Ag_DRT_net6)$weight>0) # 125 positive and 9 negative
+
+# top100
+Ag_DRT_net7<-delete.vertices(Ag_DRT_net4,labels(sort(degree(Ag_DRT_net4),FALSE)[c(1:(length(V(Ag_DRT_net4)$name)-100))]))
+Ag_DRT_net7<-delete.vertices(Ag_DRT_net7,degree(Ag_DRT_net7)==0) # IGRAPH 4396d61 UNW- 99 353 --
+summary(E(Ag_DRT_net7)$weight>0)
+```
+
+
+## Plot network
+
+```{r}
+
+tiff('/Users/fangliu/Documents/2016_cultivar_project/R_analysis/SparCC_3rd/Ag_DRT_net4.tiff', units="in", width=10, height=8, res=300)
+plot(Ag_DRT_net4,edge.arrow.size=0,edge.width=abs(E(Ag_DRT_net4)$width/4),vertex.color=V(Ag_DRT_net4)$vertex_color,vertex.frame.color="#555555",vertex.label=NA,edge.color=c("#ff8989","#9fe899")[1+(E(Ag_DRT_net4)$weight>0)],vertex.size=degree(Ag_DRT_net4)/10,layout=layout_with_fr (Ag_DRT_net4),main="Ag_DRT_net4") # green edges means positive correlation and red edges mean negative correlation
+dev.off()
+
+#plot(Ag_DRT_net5,edge.arrow.size=0,edge.width=abs(E(Ag_DRT_net5)$width/3),vertex.color=V(Ag_DRT_net5)$vertex_color,vertex.frame.color="#555555",vertex.label=V(Ag_DRT_net5)$label,edge.color=c("#ff8989","#9fe899")[1+(E(Ag_DRT_net5)$weight>0)],vertex.label.cex=.8,vertex.size=degree(Ag_DRT_net5)/1.5,layout=layout_with_dh (Ag_DRT_net5),main="Ag_DRT_net5")
+
+tiff('/Users/fangliu/Documents/2016_cultivar_project/R_analysis/SparCC_3rd/Ag_DRT_net6.tiff', units="in", width=10, height=8, res=300)
+plot(Ag_DRT_net6,edge.arrow.size=0,edge.width=abs(E(Ag_DRT_net6)$width/3),vertex.color=V(Ag_DRT_net6)$vertex_color,vertex.frame.color="#555555",vertex.label=V(Ag_DRT_net6)$label,vertex.label.color="black",vertex.label.cex=.8,vertex.label.font=2,vertex.label.dist=0,edge.color=c("#ff8989","#9fe899")[1+(E(Ag_DRT_net6)$weight>0)],vertex.size=degree(Ag_DRT_net6)/1.5,layout=layout_with_dh (Ag_DRT_net6),main="Ag_DRT_net6")
+dev.off()
+
+tiff('/Users/fangliu/Documents/2016_cultivar_project/R_analysis/SparCC_3rd/Ag_DRT_net7.tiff', units="in", width=10, height=8, res=300)
+plot(Ag_DRT_net7,edge.arrow.size=0,edge.width=abs(E(Ag_DRT_net7)$width/3),vertex.color=V(Ag_DRT_net7)$vertex_color,vertex.frame.color="#555555",vertex.label=V(Ag_DRT_net7)$label,vertex.label.color="black",vertex.label.cex=.8,vertex.label.font=2,vertex.label.dist=0,edge.color=c("#ff8989","#9fe899")[1+(E(Ag_DRT_net7)$weight>0)],vertex.size=degree(Ag_DRT_net7)/1.5,layout=layout_with_dh (Ag_DRT_net7),main="Ag_DRT_net7")
+dev.off()
+```
+
+-----------------------------------
+#        Ag_CV3 dataset
+-----------------------------------
+
+## prepare the dataset as input for SparCC
+
+```{r}
+Ag_CNR_phyloseq<-subset_samples(cultivar_phyloseq,Treat=="Agriculture_CNR")
+Ag_CNR_phyloseq
+sort(taxa_sums(Ag_CNR_phyloseq),TRUE)[1100]
+Ag_CNR_phyloseq<-filter_taxa(Ag_CNR_phyloseq,function(x) sum(x)>=24,prune = TRUE)
+Ag_CNR_phyloseq
+Ag_CNR_OTU_SparCC<-data.frame(row.names(tax_table(Ag_CNR_phyloseq)),otu_table(Ag_CNR_phyloseq))
+#write.csv(Ag_CNR_OTU_SparCC, file = "Ag_CNR_OTU_SparCC.csv",row.names = TRUE)
+```
+
+## import SparCC and p_value matrix into R 
+
+```{r}
+# Read in SparCC correlation matrix
+Ag_CNR_SparCC_cor<-read.csv("Ag_CV3_OTU_cor_sparcc.csv",header = TRUE,row.names = 1)
+Ag_CNR_SparCC_cor<-as.matrix(Ag_CNR_SparCC_cor)
+dim(Ag_CNR_SparCC_cor)
+Ag_CNR_SparCC_cor[1:5,1:5]
+
+# Read in corresponding p_value dataframe
+Ag_CNR_SparCC_pvalue<-read.csv("Ag_CV3_OTU_two_sided_pvalue.csv",header = TRUE,row.names = 1)
+Ag_CNR_SparCC_pvalue<-as.matrix(Ag_CNR_SparCC_pvalue)
+dim(Ag_CNR_SparCC_pvalue)
+Ag_CNR_SparCC_pvalue[1:5,1:5]
+```
+
+
+## Generate vertices information and add relative abundance information to vertices and color information
+
+
+```{r}
+r_Ag_CNR_phyloseq<-transform_sample_counts(Ag_CNR_phyloseq,function(x) x/sum(x))
+
+Ag_CNR_vertex<-data.frame(OtuID=taxa_names(r_Ag_CNR_phyloseq),tax_table(r_Ag_CNR_phyloseq),size=taxa_sums(r_Ag_CNR_phyloseq)/length(sample_sums(r_Ag_CNR_phyloseq))) # Here size are the average relative abundance of each OTU across all samples within same treatment
+dim(Ag_CNR_vertex)
+Ag_CNR_vertex[1:5,]
+Ag_CNR_vertex<-Ag_CNR_vertex[,c(1,3,7,8)]
+head(Ag_CNR_vertex)
+levels<-factor(c("Bacteria_unclassified","Planctomycetes","Verrucomicrobia","Proteobacteria","Acidobacteria","Bacteroidetes","Actinobacteria","TM7","Gemmatimonadetes","Chlamydiae","Firmicutes","Chloroflexi","OD1", "Armatimonadetes","Nitrospira","BRC1","WS3","Tenericutes","Spirochaetes"))
+
+labels<-c('#9b9696','#ffee32','#f2701a','#b6cc0e','#ed5567','#07aeba','#3a44ff','#f936f6','#723434','#8ae2cc','#316022','#85f785','#be85f7','#990101','#b105fc','#fc05ba','#fc0505','#210000','#bc883a')
+
+#tiff ('Phylum_color_pie_plot.tiff', units="in", width=10, height=8, res=300)
+#pie(rep(1,19),col=labels,labels = levels,radius = 1.0)
+#dev.off()
+
+Ag_CNR_vertex$color<-factor(Ag_CNR_vertex$Phylum,levels = levels,labels=labels)
+dim(Ag_CNR_vertex)
+Ag_CNR_vertex[1:5,]
+
+Ag_CNR_vertex<-join (Ag_CNR_vertex,cultivar_meta,by="OtuID") # Originally, I used merge function, but it turned out to be problematic, because after merge it will The rows are by default lexicographically sorted on the common columns. To resulve this problem, I changed merge function to joint function.
+
+dim(Ag_CNR_vertex)
+Ag_CNR_vertex[1:5,]
+```
+
+
+## Creat links and have a look at edge and vertex information
+
+```{r}
+# read SparCC correlation matrix and p_value matrix to igraph
+Ag_CNR_net<-graph_from_adjacency_matrix(Ag_CNR_SparCC_cor,weighted = TRUE)
+Ag_CNR_net  ## IGRAPH 6c213ff DNW- 1100 1210000 -- 
+summary(V(Ag_CNR_net)$name==as.character(Ag_CNR_vertex$OtuID)) 
+V(Ag_CNR_net)$name[1:5]
+E(Ag_CNR_net)$weight[1:5] # here the weight are just the SparCC coefficience
+
+# Add vertex information to the network
+V(Ag_CNR_net)$vertex_color<-as.character(Ag_CNR_vertex$color)
+V(Ag_CNR_net)$size<-Ag_CNR_vertex$size
+V(Ag_CNR_net)$Phylum<-as.character(Ag_CNR_vertex$Phylum)
+V(Ag_CNR_net)$label<-as.character(Ag_CNR_vertex$label)
+
+# Add edge information (p_value) to the network
+E(Ag_CNR_net)$p_value<-Ag_CNR_SparCC_pvalue
+E(Ag_CNR_net)$p_value[1:10]
+
+## Add edge width to the network
+E(Ag_CNR_net)$width<-E(Ag_CNR_net)$weight*10
+E(Ag_CNR_net)$width
+```
+
+
+------------------------------------------------------------------------------------------------------------------------------------------
+In order to simplify the network, including remove of loop and mutual edges. If using simplify function on Bulk_net, this will loose p_value and edge color information (which indicate if the interaction are negarive or positive)
+
+To solve this problem, I will write out the edge and vertices in dataframe format and read into these two dataframe and modify the edge information globally before use ``graph_from_data_frame`` to create network object.
+-----------------------------------------------------------------------------------------------------------------------------------------
+
+
+## write out edges and vertices in dataframe format, and edit on the network
+
+```{r}
+
+# -- generate edge dataframe from whole network---
+
+Ag_CNR_edges<-as_data_frame(Ag_CNR_net,what = "edges")
+dim(Ag_CNR_edges) # 1227664 rows and 5 columns
+head(Ag_CNR_edges)
+# Here the weight indicate the strength of interaction (SparCC value), p_value is the significance of interactions nad width is formulated based on weight * 40.
+
+# -- generate vertices dataframe from whole network---
+Ag_CNR_vertices<-as_data_frame(Ag_CNR_net,what = "vertices")
+dim(Ag_CNR_vertices)
+head(Ag_CNR_vertices)
+
+# remove edges that from and to the same nodes(selfloops)
+Ag_CNR_edges<-Ag_CNR_edges[which(Ag_CNR_edges$from!=Ag_CNR_edges$to),]
+dim(Ag_CNR_edges) # 1226556 rows and 5 columns
+head(Ag_CNR_edges)
+
+# Creat a new network using the above vertices and edge data frame
+Ag_CNR_net1 <- graph_from_data_frame(d=Ag_CNR_edges, vertices=Ag_CNR_vertices, directed=T)#here if I used directed=FALSE, I will lost my p_value information as well as weight information. 
+Ag_CNR_net1 # IGRAPH 37c07d2 DNW- 1108 1226556 --
+E(Ag_CNR_net1)$weight[1:10]
+
+# convert directed network to undirected network
+
+Ag_CNR_net2<-as.undirected(Ag_CNR_net1 ,mode = 'mutual',edge.attr.comb = "mean") # as a result, weight, p_value and width of edges are all averaged for mutual edges.
+Ag_CNR_net2 # IGRAPH 7a4c57c UNW- 1108 613278 --
+E(Ag_CNR_net2)$weight[1:10]
+E(Ag_CNR_net2)$weight[1:10]
+E(Ag_CNR_net2)$p_value[1:10]
+E(Ag_CNR_net2)$width[1:10]
+
+## simplify the network from Ag_CNR_net3
+
+#1)  remove non_significant edges with alpha=0.05
+
+summary(E(Ag_CNR_net2)$p_value<0.05) #TRUE 46461 and FALSE 566817   
+
+Ag_CNR_net3<-delete.edges(Ag_CNR_net2,which(E(Ag_CNR_net2)$p_value>=0.05))
+Ag_CNR_net3 # IGRAPH 5095c72 UNW- 1108 46461 --
+summary(degree(Ag_CNR_net3)==0) # all of the nodes has connection to others
+summary(E(Ag_CNR_net3)$weight>0) # 24323 positive interactions, 22138 nagative interactions
+
+#2) remove non-significant edges with alpha=0.001
+
+summary(E(Ag_CNR_net2)$p_value<0.001) # TRUE 4938, FALSE 608340
+Ag_CNR_net4<-delete.edges(Ag_CNR_net2,which(E(Ag_CNR_net2)$p_value>=0.001))
+Ag_CNR_net4 # IGRAPH 1bc15fb UNW- 1108 4938 --
+Ag_CNR_net4<-delete.vertices(Ag_CNR_net4,degree(Ag_CNR_net4)==0) # IGRAPH 03734fe UNW- 1106 4938 -
+
+#3) further simplify the network based on degree
+barplot(sort(degree(Ag_CNR_net4)),main = "Ag_CNR_net4_barplot")
+summary(degree(Ag_CNR_net4)>20) # 42 nodes with degree larger than 20
+Ag_CNR_net5<-delete.vertices(Ag_CNR_net4,which(degree(Ag_CNR_net4)<=20))
+Ag_CNR_net5# IGRAPH 763bfd8 UNW- 42 132 --
+summary(E(Ag_CNR_net5)$weight>0) # 62 positive and 70 negative
+
+# top 50
+
+Ag_CNR_net6<-delete.vertices(Ag_CNR_net4,labels(sort(degree(Ag_CNR_net4),FALSE)[c(1:(length(V(Ag_CNR_net4)$name)-50))]))
+Ag_CNR_net6<-delete.vertices(Ag_CNR_net6,degree(Ag_CNR_net6)==0) # IGRAPH f816864 UNW- 49 160 --
+summary(E(Ag_CNR_net6)$weight>0)
+
+# top100
+Ag_CNR_net7<-delete.vertices(Ag_CNR_net4,labels(sort(degree(Ag_CNR_net4),FALSE)[c(1:(length(V(Ag_CNR_net4)$name)-100))]))
+Ag_CNR_net7<-delete.vertices(Ag_CNR_net7,degree(Ag_CNR_net7)==0) # IGRAPH 06053a6 UNW- 96 351 -- 
+summary(E(Ag_CNR_net7)$weight>0) # 170 positive and 181 negative
+```
+
+
+## Plot network
+
+```{r}
+
+tiff('/Users/fangliu/Documents/2016_cultivar_project/R_analysis/SparCC_3rd/Ag_CNR_net4.tiff', units="in", width=10, height=8, res=300)
+plot(Ag_CNR_net4,edge.arrow.size=0,edge.width=abs(E(Ag_CNR_net4)$width/4),vertex.color=V(Ag_CNR_net4)$vertex_color,vertex.frame.color="#555555",vertex.label=NA,edge.color=c("#ff8989","#9fe899")[1+(E(Ag_CNR_net4)$weight>0)],vertex.size=degree(Ag_CNR_net4)/10,layout=layout_with_fr (Ag_CNR_net4),main="Ag_CNR_net4") # green edges means positive correlation and red edges mean negative correlation
+dev.off()
+
+#plot(Ag_CNR_net5,edge.arrow.size=0,edge.width=abs(E(Ag_CNR_net5)$width/3),vertex.color=V(Ag_CNR_net5)$vertex_color,vertex.frame.color="#555555",vertex.label=V(Ag_CNR_net5)$label,edge.color=c("#ff8989","#9fe899")[1+(E(Ag_CNR_net5)$weight>0)],vertex.label.cex=.8,vertex.size=degree(Ag_CNR_net5)/1.5,layout=layout_with_dh (Ag_CNR_net5),main="Ag_CNR_net5")
+
+tiff('/Users/fangliu/Documents/2016_cultivar_project/R_analysis/SparCC_3rd/Ag_CNR_net6.tiff', units="in", width=10, height=8, res=300)
+plot(Ag_CNR_net6,edge.arrow.size=0,edge.width=abs(E(Ag_CNR_net6)$width/3),vertex.color=V(Ag_CNR_net6)$vertex_color,vertex.frame.color="#555555",vertex.label=V(Ag_CNR_net6)$label,vertex.label.color="black",vertex.label.cex=.8,vertex.label.font=2,vertex.label.dist=0,edge.color=c("#ff8989","#9fe899")[1+(E(Ag_CNR_net6)$weight>0)],vertex.size=degree(Ag_CNR_net6)/1.5,layout=layout_with_dh (Ag_CNR_net6),main="Ag_CNR_net6")
+dev.off()
+
+tiff('/Users/fangliu/Documents/2016_cultivar_project/R_analysis/SparCC_3rd/Ag_CNR_net7.tiff', units="in", width=10, height=8, res=300)
+plot(Ag_CNR_net7,edge.arrow.size=0,edge.width=abs(E(Ag_CNR_net7)$width/3),vertex.color=V(Ag_CNR_net7)$vertex_color,vertex.frame.color="#555555",vertex.label=V(Ag_CNR_net7)$label,vertex.label.color="black",vertex.label.cex=.8,vertex.label.font=2,vertex.label.dist=0,edge.color=c("#ff8989","#9fe899")[1+(E(Ag_CNR_net7)$weight>0)],vertex.size=degree(Ag_CNR_net7)/1.5,layout=layout_with_dh (Ag_CNR_net7),main="Ag_CNR_net7")
+dev.off()
+```
+
+-----------------------------------
+#        Ag_CV4 dataset
+-----------------------------------
+
+## prepare the dataset as input for SparCC
+
+```{r}
+Ag_NNW_phyloseq<-subset_samples(cultivar_phyloseq,Treat=="Agriculture_NNW")
+Ag_NNW_phyloseq
+sort(taxa_sums(Ag_NNW_phyloseq),TRUE)[1100]
+Ag_NNW_phyloseq<-filter_taxa(Ag_NNW_phyloseq,function(x) sum(x)>=22,prune = TRUE)
+Ag_NNW_phyloseq
+Ag_NNW_OTU_SparCC<-data.frame(row.names(tax_table(Ag_NNW_phyloseq)),otu_table(Ag_NNW_phyloseq))
+#write.csv(Ag_NNW_OTU_SparCC, file = "Ag_NNW_OTU_SparCC.csv",row.names = TRUE)
+```
+
+
+## import SparCC and p_value matrix into R 
+
+```{r}
+# Read in SparCC correlation matrix
+Ag_NNW_SparCC_cor<-read.csv("Ag_CV4_OTU_cor_sparcc.csv",header = TRUE,row.names = 1)
+Ag_NNW_SparCC_cor<-as.matrix(Ag_NNW_SparCC_cor)
+dim(Ag_NNW_SparCC_cor)
+Ag_NNW_SparCC_cor[1:5,1:5]
+
+# Read in corresponding p_value dataframe
+Ag_NNW_SparCC_pvalue<-read.csv("Ag_CV4_OTU_two_sided_pvalue.csv",header = TRUE,row.names = 1)
+Ag_NNW_SparCC_pvalue<-as.matrix(Ag_NNW_SparCC_pvalue)
+dim(Ag_NNW_SparCC_pvalue)
+Ag_NNW_SparCC_pvalue[1:5,1:5]
+```
+
+
+## Generate vertices information and add relative abundance information to vertices and color information
+
+
+```{r}
+r_Ag_NNW_phyloseq<-transform_sample_counts(Ag_NNW_phyloseq,function(x) x/sum(x))
+
+Ag_NNW_vertex<-data.frame(OtuID=taxa_names(r_Ag_NNW_phyloseq),tax_table(r_Ag_NNW_phyloseq),size=taxa_sums(r_Ag_NNW_phyloseq)/length(sample_sums(r_Ag_NNW_phyloseq))) # Here size are the average relative abundance of each OTU across all samples within same treatment
+dim(Ag_NNW_vertex)
+Ag_NNW_vertex[1:5,]
+Ag_NNW_vertex<-Ag_NNW_vertex[,c(1,3,7,8)]
+head(Ag_NNW_vertex)
+levels<-factor(c("Bacteria_unclassified","Planctomycetes","Verrucomicrobia","Proteobacteria","Acidobacteria","Bacteroidetes","Actinobacteria","TM7","Gemmatimonadetes","Chlamydiae","Firmicutes","Chloroflexi","OD1", "Armatimonadetes","Nitrospira","BRC1","WS3","Tenericutes","Spirochaetes"))
+
+labels<-c('#9b9696','#ffee32','#f2701a','#b6cc0e','#ed5567','#07aeba','#3a44ff','#f936f6','#723434','#8ae2cc','#316022','#85f785','#be85f7','#990101','#b105fc','#fc05ba','#fc0505','#210000','#bc883a')
+
+#tiff ('Phylum_color_pie_plot.tiff', units="in", width=10, height=8, res=300)
+#pie(rep(1,19),col=labels,labels = levels,radius = 1.0)
+#dev.off()
+
+Ag_NNW_vertex$color<-factor(Ag_NNW_vertex$Phylum,levels = levels,labels=labels)
+dim(Ag_NNW_vertex)
+Ag_NNW_vertex[1:5,]
+
+Ag_NNW_vertex<-join (Ag_NNW_vertex,cultivar_meta,by="OtuID") # Originally, I used merge function, but it turned out to be problematic, because after merge it will The rows are by default lexicographically sorted on the common columns. To resulve this problem, I changed merge function to joint function.
+
+dim(Ag_NNW_vertex)
+Ag_NNW_vertex[1:5,]
+```
+
+
+## Creat links and have a look at edge and vertex information
+
+```{r}
+# read SparCC correlation matrix and p_value matrix to igraph
+Ag_NNW_net<-graph_from_adjacency_matrix(Ag_NNW_SparCC_cor,weighted = TRUE)
+Ag_NNW_net  ## IGRAPH 414593f DNW- 1110 1232100 --
+summary(V(Ag_NNW_net)$name==as.character(Ag_NNW_vertex$OtuID)) 
+V(Ag_NNW_net)$name[1:5]
+E(Ag_NNW_net)$weight[1:5] # here the weight are just the SparCC coefficience
+
+# Add vertex information to the network
+V(Ag_NNW_net)$vertex_color<-as.character(Ag_NNW_vertex$color)
+V(Ag_NNW_net)$size<-Ag_NNW_vertex$size
+V(Ag_NNW_net)$Phylum<-as.character(Ag_NNW_vertex$Phylum)
+V(Ag_NNW_net)$label<-as.character(Ag_NNW_vertex$label)
+
+# Add edge information (p_value) to the network
+E(Ag_NNW_net)$p_value<-Ag_NNW_SparCC_pvalue
+E(Ag_NNW_net)$p_value[1:10]
+
+## Add edge width to the network
+E(Ag_NNW_net)$width<-E(Ag_NNW_net)$weight*10
+E(Ag_NNW_net)$width
+```
+
+
+------------------------------------------------------------------------------------------------------------------------------------------
+In order to simplify the network, including remove of loop and mutual edges. If using simplify function on Bulk_net, this will loose p_value and edge color information (which indicate if the interaction are negarive or positive)
+
+To solve this problem, I will write out the edge and vertices in dataframe format and read into these two dataframe and modify the edge information globally before use ``graph_from_data_frame`` to create network object.
+-----------------------------------------------------------------------------------------------------------------------------------------
+
+
+## write out edges and vertices in dataframe format, and edit on the network
+
+```{r}
+
+# -- generate edge dataframe from whole network---
+
+Ag_NNW_edges<-as_data_frame(Ag_NNW_net,what = "edges")
+dim(Ag_NNW_edges) # 1232100 rows and 5 columns
+head(Ag_NNW_edges)
+# Here the weight indicate the strength of interaction (SparCC value), p_value is the significance of interactions nad width is formulated based on weight * 40.
+
+# -- generate vertices dataframe from whole network---
+
+Ag_NNW_vertices<-as_data_frame(Ag_NNW_net,what = "vertices")
+dim(Ag_NNW_vertices)
+head(Ag_NNW_vertices)
+
+# remove edges that from and to the same nodes(selfloops)
+
+Ag_NNW_edges<-Ag_NNW_edges[which(Ag_NNW_edges$from!=Ag_NNW_edges$to),]
+dim(Ag_NNW_edges) # 1230990 rows and 5 columns
+head(Ag_NNW_edges)
+
+# Creat a new network using the above vertices and edge data frame
+Ag_NNW_net1 <- graph_from_data_frame(d=Ag_NNW_edges, vertices=Ag_NNW_vertices, directed=T)#here if I used directed=FALSE, I will lost my p_value information as well as weight information. 
+Ag_NNW_net1 # IGRAPH a9292ed DNW- 1110 1230990 --
+E(Ag_NNW_net1)$weight[1:10]
+
+# convert directed network to undirected network
+
+Ag_NNW_net2<-as.undirected(Ag_NNW_net1 ,mode = 'mutual',edge.attr.comb = "mean") # as a result, weight, p_value and width of edges are all averaged for mutual edges.
+Ag_NNW_net2 # IGRAPH 5a697c0 UNW- 1110 615495 --
+E(Ag_NNW_net2)$weight[1:10]
+E(Ag_NNW_net2)$weight[1:10]
+E(Ag_NNW_net2)$p_value[1:10]
+E(Ag_NNW_net2)$width[1:10]
+
+
+## simplify the network from Ag_NNW_net3
+
+#1)  remove non_significant edges with alpha=0.05
+
+summary(E(Ag_NNW_net2)$p_value<0.05) #TRUE 40478 and FALSE 575017   
+
+Ag_NNW_net3<-delete.edges(Ag_NNW_net2,which(E(Ag_NNW_net2)$p_value>=0.05))
+Ag_NNW_net3 # IGRAPH 338f6f5 UNW- 1110 40478 --
+summary(degree(Ag_NNW_net3)==0) # all of the nodes has connection to others
+summary(E(Ag_NNW_net3)$weight>0) # 20991  positive interactions, 19487 nagative interactions
+
+#2) remove non-significant edges with alpha=0.001
+
+summary(E(Ag_NNW_net2)$p_value<0.001) # TRUE 806, FALSE 16399
+Ag_NNW_net4<-delete.edges(Ag_NNW_net2,which(E(Ag_NNW_net2)$p_value>=0.001))
+Ag_NNW_net4 # IGRAPH ae13b49 UNW- 1110 3788 -- 
+Ag_NNW_net4<-delete.vertices(Ag_NNW_net4,degree(Ag_NNW_net4)==0) # IGRAPH 14e80ea UNW- 1087 3788 --
+
+#3) further simplify the network based on degree
+barplot(sort(degree(Ag_NNW_net4)),main = "Ag_NNW_net4_barplot")
+summary(degree(Ag_NNW_net4)>20) # 7 nodes with degree larger than 20
+Ag_NNW_net5<-delete.vertices(Ag_NNW_net4,which(degree(Ag_NNW_net4)<=20))
+Ag_NNW_net5# IGRAPH e9f935d UNW- 7 3 --
+summary(E(Ag_NNW_net5)$weight>0) # 158 positive and 134 negative
+
+# top 50
+
+Ag_NNW_net6<-delete.vertices(Ag_NNW_net4,labels(sort(degree(Ag_NNW_net4),FALSE)[c(1:(length(V(Ag_NNW_net4)$name)-50))]))
+Ag_NNW_net6<-delete.vertices(Ag_NNW_net6,degree(Ag_NNW_net6)==0) # IGRAPH 90a1108 UNW- 40 53 -- 
+summary(E(Ag_NNW_net6)$weight>0)
+
+# top100
+Ag_NNW_net7<-delete.vertices(Ag_NNW_net4,labels(sort(degree(Ag_NNW_net4),FALSE)[c(1:(length(V(Ag_NNW_net4)$name)-100))]))
+Ag_NNW_net7<-delete.vertices(Ag_NNW_net7,degree(Ag_NNW_net7)==0) # IGRAPH 9b3ca8f UNW- 97 177 --
+summary(E(Ag_NNW_net7)$weight>0)
+```
+
+
+## Plot network
+
+```{r}
+
+tiff('/Users/fangliu/Documents/2016_cultivar_project/R_analysis/SparCC_3rd/Ag_NNW_net4.tiff', units="in", width=10, height=8, res=300)
+plot(Ag_NNW_net4,edge.arrow.size=0,edge.width=abs(E(Ag_NNW_net4)$width/4),vertex.color=V(Ag_NNW_net4)$vertex_color,vertex.frame.color="#555555",vertex.label=NA,edge.color=c("#ff8989","#9fe899")[1+(E(Ag_NNW_net4)$weight>0)],vertex.size=degree(Ag_NNW_net4)/10,layout=layout_with_fr (Ag_NNW_net4),main="Ag_NNW_net4") # green edges means positive correlation and red edges mean negative correlation
+dev.off()
+
+#plot(Ag_NNW_net5,edge.arrow.size=0,edge.width=abs(E(Ag_NNW_net5)$width/3),vertex.color=V(Ag_NNW_net5)$vertex_color,vertex.frame.color="#555555",vertex.label=V(Ag_NNW_net5)$label,edge.color=c("#ff8989","#9fe899")[1+(E(Ag_NNW_net5)$weight>0)],vertex.label.cex=.8,vertex.size=degree(Ag_NNW_net5)/1.5,layout=layout_with_dh (Ag_NNW_net5),main="Ag_NNW_net5")
+
+tiff('/Users/fangliu/Documents/2016_cultivar_project/R_analysis/SparCC_3rd/Ag_NNW_net6.tiff', units="in", width=10, height=8, res=300)
+plot(Ag_NNW_net6,edge.arrow.size=0,edge.width=abs(E(Ag_NNW_net6)$width/3),vertex.color=V(Ag_NNW_net6)$vertex_color,vertex.frame.color="#555555",vertex.label=V(Ag_NNW_net6)$label,vertex.label.color="black",vertex.label.cex=.8,vertex.label.font=2,vertex.label.dist=0,edge.color=c("#ff8989","#9fe899")[1+(E(Ag_NNW_net6)$weight>0)],vertex.size=degree(Ag_NNW_net6)/1.5,layout=layout_with_dh (Ag_NNW_net6),main="Ag_NNW_net6")
+dev.off()
+
+tiff('/Users/fangliu/Documents/2016_cultivar_project/R_analysis/SparCC_3rd/Ag_NNW_net7.tiff', units="in", width=10, height=8, res=300)
+plot(Ag_NNW_net7,edge.arrow.size=0,edge.width=abs(E(Ag_NNW_net7)$width/3),vertex.color=V(Ag_NNW_net7)$vertex_color,vertex.frame.color="#555555",vertex.label=V(Ag_NNW_net7)$label,vertex.label.color="black",vertex.label.cex=.8,vertex.label.font=2,vertex.label.dist=0,edge.color=c("#ff8989","#9fe899")[1+(E(Ag_NNW_net7)$weight>0)],vertex.size=degree(Ag_NNW_net7)/1.5,layout=layout_with_dh (Ag_NNW_net7),main="Ag_NNW_net7")
+dev.off()
+```
+
+-----------------------------------
+#        Ag_CV5 dataset
+-----------------------------------
+
+## prepare the dataset as input for SparCC
+
+```{r}
+Ag_SOJ_phyloseq<-subset_samples(cultivar_phyloseq,Treat=="Agriculture_SOJ")
+Ag_SOJ_phyloseq
+sort(taxa_sums(Ag_SOJ_phyloseq),TRUE)[1100]
+Ag_SOJ_phyloseq<-filter_taxa(Ag_SOJ_phyloseq,function(x) sum(x)>=22,prune = TRUE)
+Ag_SOJ_phyloseq
+Ag_SOJ_OTU_SparCC<-data.frame(row.names(tax_table(Ag_SOJ_phyloseq)),otu_table(Ag_SOJ_phyloseq))
+#write.csv(Ag_CV5_OTU_SparCC, file = "Ag_CV5_OTU_SparCC.csv",row.names = TRUE)
+```
+
+
+## import SparCC and p_value matrix into R 
+
+```{r}
+# Read in SparCC correlation matrix
+Ag_SOJ_SparCC_cor<-read.csv("Ag_CV5_OTU_cor_sparcc.csv",header = TRUE,row.names = 1)
+Ag_SOJ_SparCC_cor<-as.matrix(Ag_SOJ_SparCC_cor)
+dim(Ag_SOJ_SparCC_cor)
+Ag_SOJ_SparCC_cor[1:5,1:5]
+
+# Read in corresponding p_value dataframe
+Ag_SOJ_SparCC_pvalue<-read.csv("Ag_CV5_OTU_two_sided_pvalue.csv",header = TRUE,row.names = 1)
+Ag_SOJ_SparCC_pvalue<-as.matrix(Ag_SOJ_SparCC_pvalue)
+dim(Ag_SOJ_SparCC_pvalue)
+Ag_SOJ_SparCC_pvalue[1:5,1:5]
+```
+
+
+## Generate vertices information and add relative abundance information to vertices and color information
+
+
+```{r}
+r_Ag_SOJ_phyloseq<-transform_sample_counts(Ag_SOJ_phyloseq,function(x) x/sum(x))
+
+Ag_SOJ_vertex<-data.frame(OtuID=taxa_names(r_Ag_SOJ_phyloseq),tax_table(r_Ag_SOJ_phyloseq),size=taxa_sums(r_Ag_SOJ_phyloseq)/length(sample_sums(r_Ag_SOJ_phyloseq))) # Here size are the average relative abundance of each OTU across all samples within same treatment
+dim(Ag_SOJ_vertex)
+Ag_SOJ_vertex[1:5,]
+Ag_SOJ_vertex<-Ag_SOJ_vertex[,c(1,3,7,8)]
+head(Ag_SOJ_vertex)
+levels<-factor(c("Bacteria_unclassified","Planctomycetes","Verrucomicrobia","Proteobacteria","Acidobacteria","Bacteroidetes","Actinobacteria","TM7","Gemmatimonadetes","Chlamydiae","Firmicutes","Chloroflexi","OD1", "Armatimonadetes","Nitrospira","BRC1","WS3","Tenericutes","Spirochaetes"))
+
+labels<-c('#9b9696','#ffee32','#f2701a','#b6cc0e','#ed5567','#07aeba','#3a44ff','#f936f6','#723434','#8ae2cc','#316022','#85f785','#be85f7','#990101','#b105fc','#fc05ba','#fc0505','#210000','#bc883a')
+
+#tiff ('Phylum_color_pie_plot.tiff', units="in", width=10, height=8, res=300)
+#pie(rep(1,19),col=labels,labels = levels,radius = 1.0)
+#dev.off()
+
+Ag_SOJ_vertex$color<-factor(Ag_SOJ_vertex$Phylum,levels = levels,labels=labels)
+dim(Ag_SOJ_vertex)
+Ag_SOJ_vertex[1:5,]
+
+Ag_SOJ_vertex<-join (Ag_SOJ_vertex,cultivar_meta,by="OtuID") # Originally, I used merge function, but it turned out to be problematic, because after merge it will The rows are by default lexicographically sorted on the common columns. To resulve this problem, I changed merge function to joint function.
+
+dim(Ag_SOJ_vertex)
+Ag_SOJ_vertex[1:5,]
+```
+
+
+## Creat links and have a look at edge and vertex information
+
+```{r}
+# read SparCC correlation matrix and p_value matrix to igraph
+Ag_SOJ_net<-graph_from_adjacency_matrix(Ag_SOJ_SparCC_cor,weighted = TRUE)
+Ag_SOJ_net  ## IGRAPH caccda4 DNW- 1026 1052676 -- 
+summary(V(Ag_SOJ_net)$name==as.character(Ag_SOJ_vertex$OtuID)) 
+V(Ag_SOJ_net)$name[1:5]
+E(Ag_SOJ_net)$weight[1:5] # here the weight are just the SparCC coefficience
+
+# Add vertex information to the network
+V(Ag_SOJ_net)$vertex_color<-as.character(Ag_SOJ_vertex$color)
+V(Ag_SOJ_net)$size<-Ag_SOJ_vertex$size
+V(Ag_SOJ_net)$Phylum<-as.character(Ag_SOJ_vertex$Phylum)
+V(Ag_SOJ_net)$label<-as.character(Ag_SOJ_vertex$label)
+
+# Add edge information (p_value) to the network
+E(Ag_SOJ_net)$p_value<-Ag_SOJ_SparCC_pvalue
+E(Ag_SOJ_net)$p_value[1:10]
+
+## Add edge width to the network
+E(Ag_SOJ_net)$width<-E(Ag_SOJ_net)$weight*10
+E(Ag_SOJ_net)$width
+```
+
+
+------------------------------------------------------------------------------------------------------------------------------------------
+In order to simplify the network, including remove of loop and mutual edges. If using simplify function on Bulk_net, this will loose p_value and edge color information (which indicate if the interaction are negarive or positive)
+
+To solve this problem, I will write out the edge and vertices in dataframe format and read into these two dataframe and modify the edge information globally before use ``graph_from_data_frame`` to create network object.
+-----------------------------------------------------------------------------------------------------------------------------------------
+
+
+## write out edges and vertices in dataframe format, and edit on the network
+
+```{r}
+
+# -- generate edge dataframe from whole network---
+
+Ag_SOJ_edges<-as_data_frame(Ag_SOJ_net,what = "edges")
+#Ag_SOJ_edges
+dim(Ag_SOJ_edges) # 1052676 rows and 5 columns
+head(Ag_SOJ_edges)
+# Here the weight indicate the strength of interaction (SparCC value), p_value is the significance of interactions nad width is formulated based on weight * 40.
+
+# -- generate vertices dataframe from whole network---
+
+Ag_SOJ_vertices<-as_data_frame(Ag_SOJ_net,what = "vertices")
+dim(Ag_SOJ_vertices)
+head(Ag_SOJ_vertices)
+
+# remove edges that from and to the same nodes(selfloops)
+
+Ag_SOJ_edges<-Ag_SOJ_edges[which(Ag_SOJ_edges$from!=Ag_SOJ_edges$to),]
+dim(Ag_SOJ_edges) # 1051650 rows and 5 columns
+head(Ag_SOJ_edges)
+
+# Creat a new network using the above vertices and edge data frame
+Ag_SOJ_net1 <- graph_from_data_frame(d=Ag_SOJ_edges, vertices=Ag_SOJ_vertices, directed=T)#here if I used directed=FALSE, I will lost my p_value information as well as weight information. 
+Ag_SOJ_net1 # IGRAPH 667a82e DNW- 1026 1051650 --
+E(Ag_SOJ_net1)$weight[1:10]
+
+# convert directed network to undirected network
+
+Ag_SOJ_net2<-as.undirected(Ag_SOJ_net1 ,mode = 'mutual',edge.attr.comb = "mean") # as a result, weight, p_value and width of edges are all averaged for mutual edges.
+Ag_SOJ_net2 # IGRAPH 734fbb5 UNW- 1026 525825 --
+E(Ag_SOJ_net2)$weight[1:10]
+E(Ag_SOJ_net2)$weight[1:10]
+E(Ag_SOJ_net2)$p_value[1:10]
+E(Ag_SOJ_net2)$width[1:10]
+
+
+## simplify the network from Ag_SOJ_net3
+
+#1)  remove non_significant edges with alpha=0.05
+
+summary(E(Ag_SOJ_net2)$p_value<0.05) #TRUE 46420 and FALSE 479405   
+
+Ag_SOJ_net3<-delete.edges(Ag_SOJ_net2,which(E(Ag_SOJ_net2)$p_value>=0.05))
+Ag_SOJ_net3 # IGRAPH 29bf1c3 UNW- 1026 46420 --
+summary(degree(Ag_SOJ_net3)==0) # all of the nodes has connection to others
+summary(E(Ag_SOJ_net3)$weight>0) # 24191 positive interactions, 22229 nagative interactions
+
+#2) remove non-significant edges with alpha=0.001
+
+summary(E(Ag_SOJ_net2)$p_value<0.001) # TRUE 4697, FALSE 521128
+Ag_SOJ_net4<-delete.edges(Ag_SOJ_net2,which(E(Ag_SOJ_net2)$p_value>=0.001))
+Ag_SOJ_net4 # IGRAPH 4572cc0 UNW- 1026 4697 --
+Ag_SOJ_net4<-delete.vertices(Ag_SOJ_net4,degree(Ag_SOJ_net4)==0) # IGRAPH 21a482b UNW- 1008 4697 --
+
+#3) further simplify the network based on degree
+barplot(sort(degree(Ag_SOJ_net4)),main = "Ag_SOJ_net4_barplot")
+summary(degree(Ag_SOJ_net4)>20) # 65 nodes with degree larger than 20
+Ag_SOJ_net5<-delete.vertices(Ag_SOJ_net4,which(degree(Ag_SOJ_net4)<=20))
+Ag_SOJ_net5# IGRAPH 6795209 UNW- 65 278 --
+summary(E(Ag_SOJ_net5)$weight>0) # 188 positive and 90 negative
+
+# top 50
+
+Ag_SOJ_net6<-delete.vertices(Ag_SOJ_net4,labels(sort(degree(Ag_SOJ_net4),FALSE)[c(1:(length(V(Ag_SOJ_net4)$name)-50))]))
+Ag_SOJ_net6<-delete.vertices(Ag_SOJ_net6,degree(Ag_SOJ_net6)==0) #IGRAPH 4db80bd UNW- 47 168 --
+summary(E(Ag_SOJ_net6)$weight>0)
+
+# top100
+Ag_SOJ_net7<-delete.vertices(Ag_SOJ_net4,labels(sort(degree(Ag_SOJ_net4),FALSE)[c(1:(length(V(Ag_SOJ_net4)$name)-100))]))
+Ag_SOJ_net7<-delete.vertices(Ag_SOJ_net7,degree(Ag_SOJ_net7)==0) # IGRAPH fa799be UNW- 97 498 --
+summary(E(Ag_SOJ_net7)$weight>0) # 307 positive interactions and 191 negative interactions
+```
+
+
+## Plot network
+
+```{r}
+
+tiff('/Users/fangliu/Documents/2016_cultivar_project/R_analysis/SparCC_3rd/Ag_SOJ_net4.tiff', units="in", width=10, height=8, res=300)
+plot(Ag_SOJ_net4,edge.arrow.size=0,edge.width=abs(E(Ag_SOJ_net4)$width/4),vertex.color=V(Ag_SOJ_net4)$vertex_color,vertex.frame.color="#555555",vertex.label=NA,edge.color=c("#ff8989","#9fe899")[1+(E(Ag_SOJ_net4)$weight>0)],vertex.size=degree(Ag_SOJ_net4)/10,layout=layout_with_fr (Ag_SOJ_net4),main="Ag_SOJ_net4") # green edges means positive correlation and red edges mean negative correlation
+dev.off()
+
+#plot(Ag_SOJ_net5,edge.arrow.size=0,edge.width=abs(E(Ag_SOJ_net5)$width/3),vertex.color=V(Ag_SOJ_net5)$vertex_color,vertex.frame.color="#555555",vertex.label=V(Ag_SOJ_net5)$label,edge.color=c("#ff8989","#9fe899")[1+(E(Ag_SOJ_net5)$weight>0)],vertex.label.cex=.8,vertex.size=degree(Ag_SOJ_net5)/1.5,layout=layout_with_dh (Ag_SOJ_net5),main="Ag_SOJ_net5")
+
+tiff('/Users/fangliu/Documents/2016_cultivar_project/R_analysis/SparCC_3rd/Ag_SOJ_net6.tiff', units="in", width=10, height=8, res=300)
+plot(Ag_SOJ_net6,edge.arrow.size=0,edge.width=abs(E(Ag_SOJ_net6)$width/3),vertex.color=V(Ag_SOJ_net6)$vertex_color,vertex.frame.color="#555555",vertex.label=V(Ag_SOJ_net6)$label,vertex.label.color="black",vertex.label.cex=.8,vertex.label.font=2,vertex.label.dist=0,edge.color=c("#ff8989","#9fe899")[1+(E(Ag_SOJ_net6)$weight>0)],vertex.size=degree(Ag_SOJ_net6)/1.5,layout=layout_with_dh (Ag_SOJ_net6),main="Ag_SOJ_net6")
+dev.off()
+
+tiff('/Users/fangliu/Documents/2016_cultivar_project/R_analysis/SparCC_3rd/Ag_SOJ_net7.tiff', units="in", width=10, height=8, res=300)
+plot(Ag_SOJ_net7,edge.arrow.size=0,edge.width=abs(E(Ag_SOJ_net7)$width/3),vertex.color=V(Ag_SOJ_net7)$vertex_color,vertex.frame.color="#555555",vertex.label=V(Ag_SOJ_net7)$label,vertex.label.color="black",vertex.label.cex=.8,vertex.label.font=2,vertex.label.dist=0,edge.color=c("#ff8989","#9fe899")[1+(E(Ag_SOJ_net7)$weight>0)],vertex.size=degree(Ag_SOJ_net7)/1.5,layout=layout_with_dh (Ag_SOJ_net7),main="Ag_SOJ_net7")
+dev.off()
+```
+
+-----------------------------------
+#        Ag_CV6 dataset
+-----------------------------------
+
+## prepare the dataset as input for SparCC
+
+```{r}
+Ag_W82_phyloseq<-subset_samples(cultivar_phyloseq,Treat=="Agriculture_W82")
+Ag_W82_phyloseq
+sort(taxa_sums(Ag_W82_phyloseq),TRUE)[1100]
+Ag_W82_phyloseq<-filter_taxa(Ag_W82_phyloseq,function(x) sum(x)>=22,prune = TRUE) # here should be 16 instead of 22
+Ag_W82_phyloseq # 897 taxa across 8 samples
+Ag_W82_OTU_SparCC<-data.frame(row.names(tax_table(Ag_W82_phyloseq)),otu_table(Ag_W82_phyloseq))
+#write.csv(Ag_W82_OTU_SparCC, file = "Ag_W82_OTU_SparCC.csv",row.names = TRUE)
+```
+
+
+
+## import SparCC and p_value matrix into R 
+
+```{r}
+# Read in SparCC correlation matrix
+Ag_W82_SparCC_cor<-read.csv("Ag_CV6_OTU_cor_sparcc.csv",header = TRUE,row.names = 1)
+Ag_W82_SparCC_cor<-as.matrix(Ag_W82_SparCC_cor)
+dim(Ag_W82_SparCC_cor)
+Ag_W82_SparCC_cor[1:5,1:5]
+
+# Read in corresponding p_value dataframe
+Ag_W82_SparCC_pvalue<-read.csv("Ag_CV6_OTU_two_sided_pvalue.csv",header = TRUE,row.names = 1)
+Ag_W82_SparCC_pvalue<-as.matrix(Ag_W82_SparCC_pvalue)
+dim(Ag_W82_SparCC_pvalue)
+Ag_W82_SparCC_pvalue[1:5,1:5]
+```
+
+
+## Generate vertices information and add relative abundance information to vertices and color information
+
+
+```{r}
+r_Ag_W82_phyloseq<-transform_sample_counts(Ag_W82_phyloseq,function(x) x/sum(x))
+
+Ag_W82_vertex<-data.frame(OtuID=taxa_names(r_Ag_W82_phyloseq),tax_table(r_Ag_W82_phyloseq),size=taxa_sums(r_Ag_W82_phyloseq)/length(sample_sums(r_Ag_W82_phyloseq))) # Here size are the average relative abundance of each OTU across all samples within same treatment
+dim(Ag_W82_vertex)
+Ag_W82_vertex[1:5,]
+Ag_W82_vertex<-Ag_W82_vertex[,c(1,3,7,8)]
+head(Ag_W82_vertex)
+levels<-factor(c("Bacteria_unclassified","Planctomycetes","Verrucomicrobia","Proteobacteria","Acidobacteria","Bacteroidetes","Actinobacteria","TM7","Gemmatimonadetes","Chlamydiae","Firmicutes","Chloroflexi","OD1", "Armatimonadetes","Nitrospira","BRC1","WS3","Tenericutes","Spirochaetes"))
+
+labels<-c('#9b9696','#ffee32','#f2701a','#b6cc0e','#ed5567','#07aeba','#3a44ff','#f936f6','#723434','#8ae2cc','#316022','#85f785','#be85f7','#990101','#b105fc','#fc05ba','#fc0505','#210000','#bc883a')
+
+#tiff ('Phylum_color_pie_plot.tiff', units="in", width=10, height=8, res=300)
+#pie(rep(1,19),col=labels,labels = levels,radius = 1.0)
+#dev.off()
+
+Ag_W82_vertex$color<-factor(Ag_W82_vertex$Phylum,levels = levels,labels=labels)
+dim(Ag_W82_vertex)
+Ag_W82_vertex[1:5,]
+
+Ag_W82_vertex<-join (Ag_W82_vertex,cultivar_meta,by="OtuID") # Originally, I used merge function, but it turned out to be problematic, because after merge it will The rows are by default lexicographically sorted on the common columns. To resulve this problem, I changed merge function to joint function.
+
+dim(Ag_W82_vertex)
+Ag_W82_vertex[1:5,]
+```
+
+
+## Creat links and have a look at edge and vertex information
+
+```{r}
+# read SparCC correlation matrix and p_value matrix to igraph
+Ag_W82_net<-graph_from_adjacency_matrix(Ag_W82_SparCC_cor,weighted = TRUE)
+Ag_W82_net  ## IGRAPH 088b9f1 DNW- 897 804609 --
+summary(V(Ag_W82_net)$name==as.character(Ag_W82_vertex$OtuID)) 
+V(Ag_W82_net)$name[1:5]
+E(Ag_W82_net)$weight[1:5] # here the weight are just the SparCC coefficience
+
+# Add vertex information to the network
+V(Ag_W82_net)$vertex_color<-as.character(Ag_W82_vertex$color)
+V(Ag_W82_net)$size<-Ag_W82_vertex$size
+V(Ag_W82_net)$Phylum<-as.character(Ag_W82_vertex$Phylum)
+V(Ag_W82_net)$label<-as.character(Ag_W82_vertex$label)
+
+# Add edge information (p_value) to the network
+E(Ag_W82_net)$p_value<-Ag_W82_SparCC_pvalue
+E(Ag_W82_net)$p_value[1:10]
+
+## Add edge width to the network
+E(Ag_W82_net)$width<-E(Ag_W82_net)$weight*10
+E(Ag_W82_net)$width
+```
+
+
+------------------------------------------------------------------------------------------------------------------------------------------
+In order to simplify the network, including remove of loop and mutual edges. If using simplify function on Bulk_net, this will loose p_value and edge color information (which indicate if the interaction are negarive or positive)
+
+To solve this problem, I will write out the edge and vertices in dataframe format and read into these two dataframe and modify the edge information globally before use ``graph_from_data_frame`` to create network object.
+-----------------------------------------------------------------------------------------------------------------------------------------
+
+
+## write out edges and vertices in dataframe format, and edit on the network
+
+```{r}
+
+# -- generate edge dataframe from whole network---
+
+Ag_W82_edges<-as_data_frame(Ag_W82_net,what = "edges")
+#Ag_W82_edges
+dim(Ag_W82_edges) # 804609 rows and 5 columns
+head(Ag_W82_edges)
+# Here the weight indicate the strength of interaction (SparCC value), p_value is the significance of interactions nad width is formulated based on weight * 40.
+
+# -- generate vertices dataframe from whole network---
+
+Ag_W82_vertices<-as_data_frame(Ag_W82_net,what = "vertices")
+dim(Ag_W82_vertices)
+head(Ag_W82_vertices)
+
+# remove edges that from and to the same nodes(selfloops)
+
+Ag_W82_edges<-Ag_W82_edges[which(Ag_W82_edges$from!=Ag_W82_edges$to),]
+dim(Ag_W82_edges) # 803712 rows and 5 columns
+head(Ag_W82_edges)
+
+# Creat a new network using the above vertices and edge data frame
+Ag_W82_net1 <- graph_from_data_frame(d=Ag_W82_edges, vertices=Ag_W82_vertices, directed=T)#here if I used directed=FALSE, I will lost my p_value information as well as weight information. 
+Ag_W82_net1 # IGRAPH 989fa54 DNW- 897 803712 --
+E(Ag_W82_net1)$weight[1:10]
+
+# convert directed network to undirected network
+
+Ag_W82_net2<-as.undirected(Ag_W82_net1 ,mode = 'mutual',edge.attr.comb = "mean") # as a result, weight, p_value and width of edges are all averaged for mutual edges.
+Ag_W82_net2 # IGRAPH a7f7659 UNW- 897 401856 --
+E(Ag_W82_net2)$weight[1:10]
+E(Ag_W82_net2)$weight[1:10]
+E(Ag_W82_net2)$p_value[1:10]
+E(Ag_W82_net2)$width[1:10]
+
+
+## simplify the network from Ag_W82_net3
+
+#1)  remove non_significant edges with alpha=0.05
+
+summary(E(Ag_W82_net2)$p_value<0.05) #TRUE 26379 and FALSE 375477  
+
+Ag_W82_net3<-delete.edges(Ag_W82_net2,which(E(Ag_W82_net2)$p_value>=0.05))
+Ag_W82_net3 # IGRAPH acca0d7 UNW- 897 26379 --
+summary(degree(Ag_W82_net3)==0) # all of the nodes has connection to others
+summary(E(Ag_W82_net3)$weight>0) # 1518 positive interactions, 1466 nagative interactions
+
+#2) remove non-significant edges with alpha=0.001
+
+summary(E(Ag_W82_net2)$p_value<0.001) # TRUE 2562, FALSE 399294
+Ag_W82_net4<-delete.edges(Ag_W82_net2,which(E(Ag_W82_net2)$p_value>=0.001))
+Ag_W82_net4 # IGRAPH 3a274c2 UNW- 897 2562 --
+Ag_W82_net4<-delete.vertices(Ag_W82_net4,degree(Ag_W82_net4)==0) # IGRAPH ec735c3 UNW- 838 2562 --
+
+#3) further simplify the network based on degree
+barplot(sort(degree(Ag_W82_net4)),main = "Ag_W82_net4_barplot")
+summary(degree(Ag_W82_net4)>20) # 12 nodes with degree larger than 20
+Ag_W82_net5<-delete.vertices(Ag_W82_net4,which(degree(Ag_W82_net4)<=20))
+Ag_W82_net5# IGRAPH 933dc4c UNW- 12 14 --
+summary(E(Ag_W82_net5)$weight>0) # 158 positive and 134 negative
+
+# top 50
+
+Ag_W82_net6<-delete.vertices(Ag_W82_net4,labels(sort(degree(Ag_W82_net4),FALSE)[c(1:(length(V(Ag_W82_net4)$name)-50))]))
+Ag_W82_net6<-delete.vertices(Ag_W82_net6,degree(Ag_W82_net6)==0) #IGRAPH 7ac231f UNW- 49 99 --
+summary(E(Ag_W82_net6)$weight>0)
+
+# top100
+Ag_W82_net7<-delete.vertices(Ag_W82_net4,labels(sort(degree(Ag_W82_net4),FALSE)[c(1:(length(V(Ag_W82_net4)$name)-100))]))
+Ag_W82_net7<-delete.vertices(Ag_W82_net7,degree(Ag_W82_net7)==0) #IGRAPH 2abb405 UNW- 99 303 --
+summary(E(Ag_W82_net7)$weight>0)
+```
+
+
+## Plot network
+
+```{r}
+
+tiff('Ag_W82_net4.tiff', units="in", width=10, height=8, res=300)
+
+plot(Ag_W82_net4,edge.arrow.size=0,edge.width=abs(E(Ag_W82_net4)$width/4),vertex.color=V(Ag_W82_net4)$vertex_color,vertex.frame.color="#555555",vertex.label=NA,edge.color=c("#ff8989","#9fe899")[1+(E(Ag_W82_net4)$weight>0)],vertex.size=degree(Ag_W82_net4)/10,layout=layout_with_fr (Ag_W82_net4),main="Ag_W82_net4") # green edges means positive correlation and red edges mean negative correlation
+
+dev.off()
+
+plot(Ag_W82_net5,edge.arrow.size=0,edge.width=abs(E(Ag_W82_net5)$width/3),vertex.color=V(Ag_W82_net5)$vertex_color,vertex.frame.color="#555555",vertex.label=V(Ag_W82_net5)$label,edge.color=c("#ff8989","#9fe899")[1+(E(Ag_W82_net5)$weight>0)],vertex.label.cex=.8,vertex.size=degree(Ag_W82_net5)/1.5,layout=layout_with_dh (Ag_W82_net5),main="Ag_W82_net5")
+
+tiff('Ag_W82_net6.tiff', units="in", width=10, height=8, res=300)
+plot(Ag_W82_net6,edge.arrow.size=0,edge.width=abs(E(Ag_W82_net6)$width/3),vertex.color=V(Ag_W82_net6)$vertex_color,vertex.frame.color="#555555",vertex.label=V(Ag_W82_net6)$label,vertex.label.color="black",vertex.label.cex=.8,vertex.label.font=2,vertex.label.dist=0,edge.color=c("#ff8989","#9fe899")[1+(E(Ag_W82_net6)$weight>0)],vertex.size=degree(Ag_W82_net6)/1.5,layout=layout_with_dh (Ag_W82_net6),main="Ag_W82_net6")
+dev.off()
+
+tiff('Ag_W82_net7.tiff', units="in", width=10, height=8, res=300)
+plot(Ag_W82_net7,edge.arrow.size=0,edge.width=abs(E(Ag_W82_net7)$width/3),vertex.color=V(Ag_W82_net7)$vertex_color,vertex.frame.color="#555555",vertex.label=V(Ag_W82_net7)$label,vertex.label.color="black",vertex.label.cex=.8,vertex.label.font=2,vertex.label.dist=0,edge.color=c("#ff8989","#9fe899")[1+(E(Ag_W82_net7)$weight>0)],vertex.size=degree(Ag_W82_net7)/1.5,layout=layout_with_dh (Ag_W82_net7),main="Ag_W82_net7")
+dev.off()
+```
+
+-----------------------------------
+#        Ag_CV6_up dataset
+-----------------------------------
+
+## prepare corrected the dataset as input for SparCC
+
+```{r}
+Ag_W82_up_phyloseq<-subset_samples(cultivar_phyloseq,Treat=="Agriculture_W82")
+Ag_W82_up_phyloseq
+sort(taxa_sums(Ag_W82_up_phyloseq),TRUE)[1100]
+Ag_W82_up_phyloseq<-filter_taxa(Ag_W82_up_phyloseq,function(x) sum(x)>=16,prune = TRUE) # here should be 16 instead of 22
+Ag_W82_up_phyloseq # 1123 taxa across 8 samples
+Ag_W82_up_OTU_SparCC<-data.frame(row.names(tax_table(Ag_W82_up_phyloseq)),otu_table(Ag_W82_up_phyloseq))
+#write.csv(Ag_W82_up_OTU_SparCC, file = "Ag_W82_up_OTU_SparCC.csv",row.names = TRUE)
+```
+
+## import SparCC and p_value matrix into R 
+
+```{r}
+# Read in SparCC correlation matrix
+Ag_W82_up_SparCC_cor<-read.csv("Ag_CV6_up_OTU_cor_sparcc.csv",header = TRUE,row.names = 1)
+Ag_W82_up_SparCC_cor<-as.matrix(Ag_W82_up_SparCC_cor)
+dim(Ag_W82_up_SparCC_cor)
+Ag_W82_up_SparCC_cor[1:5,1:5]
+
+# Read in corresponding p_value dataframe
+Ag_W82_up_SparCC_pvalue<-read.csv("Ag_CV6_up_OTU_two_sided_pvalue.csv",header = TRUE,row.names = 1)
+Ag_W82_up_SparCC_pvalue<-as.matrix(Ag_W82_up_SparCC_pvalue)
+dim(Ag_W82_up_SparCC_pvalue)
+Ag_W82_up_SparCC_pvalue[1:5,1:5]
+```
+
+
+## Generate vertices information and add relative abundance information to vertices and color information
+
+
+```{r}
+r_Ag_W82_up_phyloseq<-transform_sample_counts(Ag_W82_up_phyloseq,function(x) x/sum(x))
+
+Ag_W82_up_vertex<-data.frame(OtuID=taxa_names(r_Ag_W82_up_phyloseq),tax_table(r_Ag_W82_up_phyloseq),size=taxa_sums(r_Ag_W82_up_phyloseq)/length(sample_sums(r_Ag_W82_up_phyloseq))) # Here size are the average relative abundance of each OTU across all samples within same treatment
+dim(Ag_W82_up_vertex)
+Ag_W82_up_vertex[1:5,]
+Ag_W82_up_vertex<-Ag_W82_up_vertex[,c(1,3,7,8)]
+head(Ag_W82_up_vertex)
+levels<-factor(c("Bacteria_unclassified","Planctomycetes","Verrucomicrobia","Proteobacteria","Acidobacteria","Bacteroidetes","Actinobacteria","TM7","Gemmatimonadetes","Chlamydiae","Firmicutes","Chloroflexi","OD1", "Armatimonadetes","Nitrospira","BRC1","WS3","Tenericutes","Spirochaetes"))
+
+labels<-c('#9b9696','#ffee32','#f2701a','#b6cc0e','#ed5567','#07aeba','#3a44ff','#f936f6','#723434','#8ae2cc','#316022','#85f785','#be85f7','#990101','#b105fc','#fc05ba','#fc0505','#210000','#bc883a')
+
+#tiff ('Phylum_color_pie_plot.tiff', units="in", width=10, height=8, res=300)
+#pie(rep(1,19),col=labels,labels = levels,radius = 1.0)
+#dev.off()
+
+Ag_W82_up_vertex$color<-factor(Ag_W82_up_vertex$Phylum,levels = levels,labels=labels)
+dim(Ag_W82_up_vertex)
+Ag_W82_up_vertex[1:5,]
+
+Ag_W82_up_vertex<-join (Ag_W82_up_vertex,cultivar_meta,by="OtuID") # Originally, I used merge function, but it turned out to be problematic, because after merge it will The rows are by default lexicographically sorted on the common columns. To resulve this problem, I changed merge function to joint function.
+
+dim(Ag_W82_up_vertex)
+Ag_W82_up_vertex[1:5,]
+```
+
+
+## Creat links and have a look at edge and vertex information
+
+```{r}
+# read SparCC correlation matrix and p_value matrix to igraph
+Ag_W82_up_net<-graph_from_adjacency_matrix(Ag_W82_up_SparCC_cor,weighted = TRUE)
+Ag_W82_up_net  ## IGRAPH 98dadab DNW- 1123 1261129 --
+summary(V(Ag_W82_up_net)$name==as.character(Ag_W82_up_vertex$OtuID)) 
+V(Ag_W82_up_net)$name[1:5]
+E(Ag_W82_up_net)$weight[1:5] # here the weight are just the SparCC coefficience
+
+# Add vertex information to the network
+V(Ag_W82_up_net)$vertex_color<-as.character(Ag_W82_up_vertex$color)
+V(Ag_W82_up_net)$size<-Ag_W82_up_vertex$size
+V(Ag_W82_up_net)$Phylum<-as.character(Ag_W82_up_vertex$Phylum)
+V(Ag_W82_up_net)$label<-as.character(Ag_W82_up_vertex$label)
+
+# Add edge information (p_value) to the network
+E(Ag_W82_up_net)$p_value<-Ag_W82_up_SparCC_pvalue
+E(Ag_W82_up_net)$p_value[1:10]
+
+## Add edge width to the network
+E(Ag_W82_up_net)$width<-E(Ag_W82_up_net)$weight*10
+E(Ag_W82_up_net)$width
+```
+
+
+------------------------------------------------------------------------------------------------------------------------------------------
+In order to simplify the network, including remove of loop and mutual edges. If using simplify function on Bulk_net, this will loose p_value and edge color information (which indicate if the interaction are negarive or positive)
+
+To solve this problem, I will write out the edge and vertices in dataframe format and read into these two dataframe and modify the edge information globally before use ``graph_from_data_frame`` to create network object.
+-----------------------------------------------------------------------------------------------------------------------------------------
+
+
+## write out edges and vertices in dataframe format, and edit on the network
+
+```{r}
+
+# -- generate edge dataframe from whole network---
+
+Ag_W82_up_edges<-as_data_frame(Ag_W82_up_net,what = "edges")
+#Ag_W82_up_edges
+dim(Ag_W82_up_edges) # 804609 rows and 5 columns
+head(Ag_W82_up_edges)
+# Here the weight indicate the strength of interaction (SparCC value), p_value is the significance of interactions nad width is formulated based on weight * 40.
+
+# -- generate vertices dataframe from whole network---
+
+Ag_W82_up_vertices<-as_data_frame(Ag_W82_up_net,what = "vertices")
+dim(Ag_W82_up_vertices)
+head(Ag_W82_up_vertices)
+
+# remove edges that from and to the same nodes(selfloops)
+
+Ag_W82_up_edges<-Ag_W82_up_edges[which(Ag_W82_up_edges$from!=Ag_W82_up_edges$to),]
+dim(Ag_W82_up_edges) # 803712 rows and 5 columns
+head(Ag_W82_up_edges)
+
+# Creat a new network using the above vertices and edge data frame
+Ag_W82_up_net1 <- graph_from_data_frame(d=Ag_W82_up_edges, vertices=Ag_W82_up_vertices, directed=T)#here if I used directed=FALSE, I will lost my p_value information as well as weight information. 
+Ag_W82_up_net1 # IGRAPH 38d9503 DNW- 1123 1260006 --
+E(Ag_W82_up_net1)$weight[1:10]
+
+# convert directed network to undirected network
+
+Ag_W82_up_net2<-as.undirected(Ag_W82_up_net1 ,mode = 'mutual',edge.attr.comb = "mean") # as a result, weight, p_value and width of edges are all averaged for mutual edges.
+Ag_W82_up_net2 # IGRAPH 3bff70b UNW- 1123 630003 --
+E(Ag_W82_up_net2)$weight[1:10]
+E(Ag_W82_up_net2)$weight[1:10]
+E(Ag_W82_up_net2)$p_value[1:10]
+E(Ag_W82_up_net2)$width[1:10]
+
+
+## simplify the network from Ag_W82_up_net3
+
+#1)  remove non_significant edges with alpha=0.05
+
+summary(E(Ag_W82_up_net2)$p_value<0.05) #TRUE 40697 and FALSE 589306  
+
+Ag_W82_up_net3<-delete.edges(Ag_W82_up_net2,which(E(Ag_W82_up_net2)$p_value>=0.05))
+Ag_W82_up_net3 # IGRAPH acca0d7 UNW- 897 26379 --
+summary(degree(Ag_W82_up_net3)==0) # all of the nodes has connection to others
+summary(E(Ag_W82_up_net3)$weight>0) # 1518 positive interactions, 1466 nagative interactions
+
+#2) remove non-significant edges with alpha=0.001
+
+summary(E(Ag_W82_up_net2)$p_value<0.001) # TRUE 3777, FALSE 626226
+Ag_W82_up_net4<-delete.edges(Ag_W82_up_net2,which(E(Ag_W82_up_net2)$p_value>=0.001))
+Ag_W82_up_net4 # IGRAPH 63bc87d UNW- 1123 3777 --
+Ag_W82_up_net4<-delete.vertices(Ag_W82_up_net4,degree(Ag_W82_up_net4)==0) # IGRAPH ec735c3 UNW- 838 2562 --
+
+#3) further simplify the network based on degree
+barplot(sort(degree(Ag_W82_up_net4)),main = "Ag_W82_up_net4_barplot")
+summary(degree(Ag_W82_up_net4)>20) # 24 nodes with degree larger than 20
+Ag_W82_up_net5<-delete.vertices(Ag_W82_up_net4,which(degree(Ag_W82_up_net4)<=20))
+Ag_W82_up_net5# IGRAPH cd82e9e UNW- 24 24 --
+summary(E(Ag_W82_up_net5)$weight>0) # 22 positive and 2 negative
+
+# top 50
+
+Ag_W82_up_net6<-delete.vertices(Ag_W82_up_net4,labels(sort(degree(Ag_W82_up_net4),FALSE)[c(1:(length(V(Ag_W82_up_net4)$name)-50))]))
+Ag_W82_up_net6<-delete.vertices(Ag_W82_up_net6,degree(Ag_W82_up_net6)==0) #IGRAPH 2efd59a UNW- 47 93 --
+summary(E(Ag_W82_up_net6)$weight>0)
+
+# top100
+Ag_W82_up_net7<-delete.vertices(Ag_W82_up_net4,labels(sort(degree(Ag_W82_up_net4),FALSE)[c(1:(length(V(Ag_W82_up_net4)$name)-100))]))
+Ag_W82_up_net7<-delete.vertices(Ag_W82_up_net7,degree(Ag_W82_up_net7)==0) #IGRAPH 30a774e UNW- 97 268 --
+summary(E(Ag_W82_up_net7)$weight>0)
+```
+
+
+## Plot network
+
+```{r}
+
+tiff('Ag_W82_up_net4.tiff', units="in", width=10, height=8, res=300)
+
+plot(Ag_W82_up_net4,edge.arrow.size=0,edge.width=abs(E(Ag_W82_up_net4)$width/4),vertex.color=V(Ag_W82_up_net4)$vertex_color,vertex.frame.color="#555555",vertex.label=NA,edge.color=c("#ff8989","#9fe899")[1+(E(Ag_W82_up_net4)$weight>0)],vertex.size=degree(Ag_W82_up_net4)/10,layout=layout_with_fr (Ag_W82_up_net4),main="Ag_W82_up_net4") # green edges means positive correlation and red edges mean negative correlation
+
+dev.off()
+
+#plot(Ag_W82_up_net5,edge.arrow.size=0,edge.width=abs(E(Ag_W82_up_net5)$width/3),vertex.color=V(Ag_W82_up_net5)$vertex_color,vertex.frame.color="#555555",vertex.label=V(Ag_W82_up_net5)$label,edge.color=c("#ff8989","#9fe899")[1+(E(Ag_W82_up_net5)$weight>0)],vertex.label.cex=.8,vertex.size=degree(Ag_W82_up_net5)/1.5,layout=layout_with_dh (Ag_W82_up_net5),main="Ag_W82_up_net5")
+
+tiff('Ag_W82_up_net6.tiff', units="in", width=10, height=8, res=300)
+plot(Ag_W82_up_net6,edge.arrow.size=0,edge.width=abs(E(Ag_W82_up_net6)$width/3),vertex.color=V(Ag_W82_up_net6)$vertex_color,vertex.frame.color="#555555",vertex.label=V(Ag_W82_up_net6)$label,vertex.label.color="black",vertex.label.cex=.8,vertex.label.font=2,vertex.label.dist=0,edge.color=c("#ff8989","#9fe899")[1+(E(Ag_W82_up_net6)$weight>0)],vertex.size=degree(Ag_W82_up_net6)/1.5,layout=layout_with_dh (Ag_W82_up_net6),main="Ag_W82_up_net6")
+dev.off()
+
+tiff('Ag_W82_up_net7.tiff', units="in", width=10, height=8, res=300)
+plot(Ag_W82_up_net7,edge.arrow.size=0,edge.width=abs(E(Ag_W82_up_net7)$width/3),vertex.color=V(Ag_W82_up_net7)$vertex_color,vertex.frame.color="#555555",vertex.label=V(Ag_W82_up_net7)$label,vertex.label.color="black",vertex.label.cex=.8,vertex.label.font=2,vertex.label.dist=0,edge.color=c("#ff8989","#9fe899")[1+(E(Ag_W82_up_net7)$weight>0)],vertex.size=degree(Ag_W82_up_net7)/1.5,layout=layout_with_dh (Ag_W82_up_net7),main="Ag_W82_up_net7")
+dev.off()
+```
+
+
+
+##--------------Forest samples----------------------------------------
+
+
+-----------------------------------
+#        For_soil dataset
+-----------------------------------
+```{r}
+For_soil_phyloseq<-subset_samples(cultivar_phyloseq,Group=="ForS")
+For_soil_phyloseq
+sort(taxa_sums(For_soil_phyloseq),TRUE)[1100]
+For_soil_phyloseq<-filter_taxa(For_soil_phyloseq,function(x) sum(x)>=27,prune = TRUE)
+For_soil_phyloseq
+For_soil_OTU_SparCC<-data.frame(row.names(tax_table(For_soil_phyloseq)),otu_table(For_soil_phyloseq))
+#write.csv(For_soil_OTU_SparCC, file = "For_soil_OTU_SparCC.csv",row.names = TRUE)
+
+```
+
+## import SparCC and p_value matrix into R 
+
+```{r}
+# Read in SparCC correlation matrix
+For_soil_SparCC_cor<-read.csv("For_soil_OTU_cor_sparcc.csv",header = TRUE,row.names = 1)
+For_soil_SparCC_cor<-as.matrix(For_soil_SparCC_cor)
+dim(For_soil_SparCC_cor)
+For_soil_SparCC_cor[1:5,1:5]
+
+# Read in corresponding p_value dataframe
+For_soil_SparCC_pvalue<-read.csv("For_soil_OTU_two_sided_pvalue.csv",header = TRUE,row.names = 1)
+For_soil_SparCC_pvalue<-as.matrix(For_soil_SparCC_pvalue)
+dim(For_soil_SparCC_pvalue)
+For_soil_SparCC_pvalue[1:5,1:5]
+```
+
+
+## Generate vertices information and add relative abundance information to vertices and color information
+
+
+```{r}
+r_For_soil_phyloseq<-transform_sample_counts(For_soil_phyloseq,function(x) x/sum(x))
+
+For_soil_vertex<-data.frame(OtuID=taxa_names(r_For_soil_phyloseq),tax_table(r_For_soil_phyloseq),size=taxa_sums(r_For_soil_phyloseq)/length(sample_sums(r_For_soil_phyloseq))) # Here size are the average relative abundance of each OTU across all samples within same treatment
+dim(For_soil_vertex)
+For_soil_vertex[1:5,]
+For_soil_vertex<-For_soil_vertex[,c(1,3,7,8)]
+head(For_soil_vertex)
+levels<-factor(c("Bacteria_unclassified","Planctomycetes","Verrucomicrobia","Proteobacteria","Acidobacteria","Bacteroidetes","Actinobacteria","TM7","Gemmatimonadetes","Chlamydiae","Firmicutes","Chloroflexi","OD1", "Armatimonadetes","Nitrospira","BRC1","WS3","Tenericutes","Spirochaetes"))
+
+labels<-c('#9b9696','#ffee32','#f2701a','#b6cc0e','#ed5567','#07aeba','#3a44ff','#f936f6','#723434','#8ae2cc','#316022','#85f785','#be85f7','#990101','#b105fc','#fc05ba','#fc0505','#210000','#bc883a')
+
+#tiff ('Phylum_color_pie_plot.tiff', units="in", width=10, height=8, res=300)
+#pie(rep(1,19),col=labels,labels = levels,radius = 1.0)
+#dev.off()
+
+For_soil_vertex$color<-factor(For_soil_vertex$Phylum,levels = levels,labels=labels)
+dim(For_soil_vertex)
+For_soil_vertex[1:5,]
+
+For_soil_vertex<-join (For_soil_vertex,cultivar_meta,by="OtuID") # Originally, I used merge function, but it turned out to be problematic, because after merge it will The rows are by default lexicographically sorted on the common columns. To resulve this problem, I changed merge function to joint function.
+
+dim(For_soil_vertex)
+For_soil_vertex[1:5,]
+```
+
+
+## Creat links and have a look at edge adn vertex information
+
+```{r}
+# read SparCC correlation matrix and p_value matrix to igraph
+For_soil_net<-graph_from_adjacency_matrix(For_soil_SparCC_cor,weighted = TRUE)
+For_soil_net  ##  IGRAPH a1905c1 DNW- 1129 1274641 --
+summary(V(For_soil_net)$name==as.character(For_soil_vertex$OtuID)) 
+V(For_soil_net)$name[1:5]
+E(For_soil_net)$weight[1:5] # here the weight are just the SparCC coefficience
+
+# Add vertex information to the network
+V(For_soil_net)$vertex_color<-as.character(For_soil_vertex$color)
+V(For_soil_net)$size<-For_soil_vertex$size
+V(For_soil_net)$Phylum<-as.character(For_soil_vertex$Phylum)
+V(For_soil_net)$label<-as.character(For_soil_vertex$label)
+
+# Add edge information (p_value) to the network
+E(For_soil_net)$p_value<-For_soil_SparCC_pvalue
+E(For_soil_net)$p_value[1:10]
+
+## Add edge width to the network
+E(For_soil_net)$width<-E(For_soil_net)$weight*10
+E(For_soil_net)$width
+```
+
+
+------------------------------------------------------------------------------------------------------------------------------------------
+In order to simplify the network, including remove of loop and mutual edges. If using simplify function on Bulk_net, this will loose p_value and edge color information (which indicate if the interaction are negarive or positive)
+
+To solve this problem, I will write out the edge and vertices in dataframe format and read into these two dataframe and modify the edge information globally before use ``graph_from_data_frame`` to create network object.
+-----------------------------------------------------------------------------------------------------------------------------------------
+
+
+## write out edges and vertices in dataframe format, and edit on the network
+
+```{r}
+
+# -- generate edge dataframe from whole network---
+
+For_soil_edges<-as_data_frame(For_soil_net,what = "edges")
+#For_soil_edges
+dim(For_soil_edges) # 1274641 rows and 5 columns
+head(For_soil_edges)
+# Here the weight indicate the strength of interaction (SparCC value), p_value is the significance of interactions nad width is formulated based on weight * 40.
+
+# -- generate vertices dataframe from whole network---
+
+For_soil_vertices<-as_data_frame(For_soil_net,what = "vertices")
+dim(For_soil_vertices)
+head(For_soil_vertices)
+
+# remove edges that from and to the same nodes(selfloops)
+
+For_soil_edges<-For_soil_edges[which(For_soil_edges$from!=For_soil_edges$to),]
+dim(For_soil_edges) # 1273512 rows and 5 columns
+head(For_soil_edges)
+
+# Creat a new network using the above vertices and edge data frame
+For_soil_net1 <- graph_from_data_frame(d=For_soil_edges, vertices=For_soil_vertices, directed=T)#here if I used directed=FALSE, I will lost my p_value information as well as weight information. 
+For_soil_net1 # IGRAPH 58436e4 DNW- 1129 1273512 --
+E(For_soil_net1)$weight[1:10]
+
+# convert directed network to undirected network
+
+For_soil_net2<-as.undirected(For_soil_net1 ,mode = 'mutual',edge.attr.comb = "mean") # as a result, weight, p_value and width of edges are all averaged for mutual edges.
+For_soil_net2 # IGRAPH 9b395bd UNW- 1129 636756 --
+E(For_soil_net2)$weight[1:10]
+E(For_soil_net2)$weight[1:10]
+E(For_soil_net2)$p_value[1:10]
+E(For_soil_net2)$width[1:10]
+
+
+## simplify the network from For_soil_net3
+
+#1)  remove non_significant edges with alpha=0.05
+
+summary(E(For_soil_net2)$p_value<0.05) #TRUE 61121 and FALSE 575635  
+
+For_soil_net3<-delete.edges(For_soil_net2,which(E(For_soil_net2)$p_value>=0.05))
+For_soil_net3 # IGRAPH d78e8f7 UNW- 1129 61121 -- 
+summary(degree(For_soil_net3)==0) # all of the nodes has connection to others
+summary(E(For_soil_net3)$weight>0) # 31144  positive interactions, 29977 nagative interactions
+
+#2) remove non-significant edges with alpha=0.001
+
+summary(E(For_soil_net2)$p_value<0.001) # TRUE 806, FALSE 16399
+For_soil_net4<-delete.edges(For_soil_net2,which(E(For_soil_net2)$p_value>=0.001))
+For_soil_net4 # IGRAPH bfd21f1 UNW- 1129 9424 --
+For_soil_net4<-delete.vertices(For_soil_net4,degree(For_soil_net4)==0) # IGRAPH 3b2cf22 UNW- 1124 9424 -- 
+
+#3) further simplify the network based on degree
+barplot(sort(degree(For_soil_net4)),main = "For_soil_net4_barplot")
+summary(degree(For_soil_net4)>20) # 272 nodes with degree larger than 20
+For_soil_net5<-delete.vertices(For_soil_net4,which(degree(For_soil_net4)<=20))
+For_soil_net5# IGRAPH dee0d87 UNW- 272 4257 -- 
+summary(E(For_soil_net5)$weight>0) # 2343  positive and 1914 negative
+
+# top 50
+
+For_soil_net6<-delete.vertices(For_soil_net4,labels(sort(degree(For_soil_net4),FALSE)[c(1:(length(V(For_soil_net4)$name)-50))]))
+summary(E(For_soil_net6)$weight>0)
+For_soil_net6<-delete.vertices(For_soil_net6,degree(For_soil_net6)==0) #IGRAPH 7828188 UNW- 50 772 --
+
+# top100
+For_soil_net7<-delete.vertices(For_soil_net4,labels(sort(degree(For_soil_net4),FALSE)[c(1:(length(V(For_soil_net4)$name)-100))]))
+For_soil_net7<-delete.vertices(For_soil_net7,degree(For_soil_net7)==0) #IGRAPH 364372c UNW- 100 1818 --
+summary(E(For_soil_net7)$weight>0)
+```
+
+
+## Plot network
+
+```{r}
+
+tiff('/Users/fangliu/Documents/2016_cultivar_project/R_analysis/SparCC_3rd/For_soil_net4.tiff', units="in", width=10, height=8, res=300)
+plot(For_soil_net4,edge.arrow.size=0,edge.width=abs(E(For_soil_net4)$width/4),vertex.color=V(For_soil_net4)$vertex_color,vertex.frame.color="#555555",vertex.label=NA,edge.color=c("#ff8989","#9fe899")[1+(E(For_soil_net4)$weight>0)],vertex.size=degree(For_soil_net4)/10,layout=layout_with_fr (For_soil_net4),main="For_soil_net4") # green edges means positive correlation and red edges mean negative correlation
+dev.off()
+
+#plot(For_soil_net5,edge.arrow.size=0,edge.width=abs(E(For_soil_net5)$width/3),vertex.color=V(For_soil_net5)$vertex_color,vertex.frame.color="#555555",vertex.label=V(For_soil_net5)$label,edge.color=c("#ff8989","#9fe899")[1+(E(For_soil_net5)$weight>0)],vertex.label.cex=.8,vertex.size=degree(For_soil_net5)/2,layout=layout_with_dh (For_soil_net5),main="For_soil_net5")
+
+tiff('/Users/fangliu/Documents/2016_cultivar_project/R_analysis/SparCC_3rd/For_soil_net6.tiff', units="in", width=10, height=8, res=300)
+plot(For_soil_net6,edge.arrow.size=0,edge.width=abs(E(For_soil_net6)$width/3),vertex.color=V(For_soil_net6)$vertex_color,vertex.frame.color="#555555",vertex.label=V(For_soil_net6)$label,vertex.label.color="black",vertex.label.cex=.8,vertex.label.font=2,vertex.label.dist=0,edge.color=c("#ff8989","#9fe899")[1+(E(For_soil_net6)$weight>0)],vertex.size=degree(For_soil_net6)/3,layout=layout_with_dh (For_soil_net6),main="For_soil_net6")
+dev.off()
+
+tiff('/Users/fangliu/Documents/2016_cultivar_project/R_analysis/SparCC_3rd/For_soil_net7.tiff', units="in", width=10, height=8, res=300)
+plot(For_soil_net7,edge.arrow.size=0,edge.width=abs(E(For_soil_net7)$width/3),vertex.color=V(For_soil_net7)$vertex_color,vertex.frame.color="#555555",vertex.label=V(For_soil_net7)$label,vertex.label.color="black",vertex.label.cex=.8,vertex.label.font=2,vertex.label.dist=0,edge.color=c("#ff8989","#9fe899")[1+(E(For_soil_net7)$weight>0)],vertex.size=degree(For_soil_net7)/3,layout=layout_with_dh (For_soil_net7),main="For_soil_net7")
+dev.off()
+```
+
+
+-----------------------------------
+#        For_CV1 dataset
+-----------------------------------
+```{r}
+For_WIL_phyloseq<-subset_samples(cultivar_phyloseq,Treat=="Forest_WIL")
+For_WIL_phyloseq
+sort(taxa_sums(For_WIL_phyloseq),TRUE)[1100]
+For_WIL_phyloseq<-filter_taxa(For_WIL_phyloseq,function(x) sum(x)>=13,prune = TRUE)
+For_WIL_phyloseq # 1130 taxa across 10 samples
+For_WIL_OTU_SparCC<-data.frame(row.names(tax_table(For_WIL_phyloseq)),otu_table(For_WIL_phyloseq))
+#write.csv(For_CV1_OTU_SparCC, file = "For_CV1_OTU_SparCC.csv",row.names = TRUE)
+```
+
+
+## import SparCC and p_value matrix into R 
+
+```{r}
+# Read in SparCC correlation matrix
+For_WIL_SparCC_cor<-read.csv("For_CV1_OTU_cor_sparcc.csv",header = TRUE,row.names = 1)
+For_WIL_SparCC_cor<-as.matrix(For_WIL_SparCC_cor)
+dim(For_WIL_SparCC_cor)
+For_WIL_SparCC_cor[1:5,1:5]
+
+# Read in corresponding p_value dataframe
+For_WIL_SparCC_pvalue<-read.csv("For_CV1_OTU_two_sided_pvalue.csv",header = TRUE,row.names = 1)
+For_WIL_SparCC_pvalue<-as.matrix(For_WIL_SparCC_pvalue)
+dim(For_WIL_SparCC_pvalue)
+For_WIL_SparCC_pvalue[1:5,1:5]
+```
+
+
+## Generate vertices information and add relative abundance information to vertices and color information
+
+
+```{r}
+r_For_WIL_phyloseq<-transform_sample_counts(For_WIL_phyloseq,function(x) x/sum(x))
+
+For_WIL_vertex<-data.frame(OtuID=taxa_names(r_For_WIL_phyloseq),tax_table(r_For_WIL_phyloseq),size=taxa_sums(r_For_WIL_phyloseq)/length(sample_sums(r_For_WIL_phyloseq))) # Here size are the average relative abundance of each OTU across all samples within same treatment
+dim(For_WIL_vertex)
+For_WIL_vertex[1:5,]
+For_WIL_vertex<-For_WIL_vertex[,c(1,3,7,8)]
+head(For_WIL_vertex)
+levels<-factor(c("Bacteria_unclassified","Planctomycetes","Verrucomicrobia","Proteobacteria","Acidobacteria","Bacteroidetes","Actinobacteria","TM7","Gemmatimonadetes","Chlamydiae","Firmicutes","Chloroflexi","OD1", "Armatimonadetes","Nitrospira","BRC1","WS3","Tenericutes","Spirochaetes"))
+
+labels<-c('#9b9696','#ffee32','#f2701a','#b6cc0e','#ed5567','#07aeba','#3a44ff','#f936f6','#723434','#8ae2cc','#316022','#85f785','#be85f7','#990101','#b105fc','#fc05ba','#fc0505','#210000','#bc883a')
+
+#tiff ('Phylum_color_pie_plot.tiff', units="in", width=10, height=8, res=300)
+#pie(rep(1,19),col=labels,labels = levels,radius = 1.0)
+#dev.off()
+
+For_WIL_vertex$color<-factor(For_WIL_vertex$Phylum,levels = levels,labels=labels)
+dim(For_WIL_vertex)
+For_WIL_vertex[1:5,]
+
+For_WIL_vertex<-join (For_WIL_vertex,cultivar_meta,by="OtuID") # Originally, I used merge function, but it turned out to be problematic, because after merge it will The rows are by default lexicographically sorted on the common columns. To resulve this problem, I changed merge function to joint function.
+
+dim(For_WIL_vertex)
+For_WIL_vertex[1:5,]
+```
+
+
+## Creat links and have a look at edge and vertex information
+
+```{r}
+# read SparCC correlation matrix and p_value matrix to igraph
+For_WIL_net<-graph_from_adjacency_matrix(For_WIL_SparCC_cor,weighted = TRUE)
+For_WIL_net  ## IGRAPH 5df4beb DNW- 1130 1276900 -- 
+summary(V(For_WIL_net)$name==as.character(For_WIL_vertex$OtuID)) 
+V(For_WIL_net)$name[1:5]
+E(For_WIL_net)$weight[1:5] # here the weight are just the SparCC coefficience
+
+# Add vertex information to the network
+V(For_WIL_net)$vertex_color<-as.character(For_WIL_vertex$color)
+V(For_WIL_net)$size<-For_WIL_vertex$size
+V(For_WIL_net)$Phylum<-as.character(For_WIL_vertex$Phylum)
+V(For_WIL_net)$label<-as.character(For_WIL_vertex$label)
+
+# Add edge information (p_value) to the network
+E(For_WIL_net)$p_value<-For_WIL_SparCC_pvalue
+E(For_WIL_net)$p_value[1:10]
+
+## Add edge width to the network
+E(For_WIL_net)$width<-E(For_WIL_net)$weight*10
+E(For_WIL_net)$width
+```
+
+
+------------------------------------------------------------------------------------------------------------------------------------------
+In order to simplify the network, including remove of loop and mutual edges. If using simplify function on Bulk_net, this will loose p_value and edge color information (which indicate if the interaction are negarive or positive)
+
+To solve this problem, I will write out the edge and vertices in dataframe format and read into these two dataframe and modify the edge information globally before use ``graph_from_data_frame`` to create network object.
+-----------------------------------------------------------------------------------------------------------------------------------------
+
+
+## write out edges and vertices in dataframe format, and edit on the network
+
+```{r}
+
+# -- generate edge dataframe from whole network---
+
+For_WIL_edges<-as_data_frame(For_WIL_net,what = "edges")
+dim(For_WIL_edges) # 1276900 rows and 5 columns
+head(For_WIL_edges)
+# Here the weight indicate the strength of interaction (SparCC value), p_value is the significance of interactions nad width is formulated based on weight * 40.
+
+# -- generate vertices dataframe from whole network---
+
+For_WIL_vertices<-as_data_frame(For_WIL_net,what = "vertices")
+dim(For_WIL_vertices)
+head(For_WIL_vertices)
+
+# remove edges that from and to the same nodes(selfloops)
+
+For_WIL_edges<-For_WIL_edges[which(For_WIL_edges$from!=For_WIL_edges$to),]
+dim(For_WIL_edges) # 1275770 rows and 5 columns
+head(For_WIL_edges)
+
+# Creat a new network using the above vertices and edge data frame
+For_WIL_net1 <- graph_from_data_frame(d=For_WIL_edges, vertices=For_WIL_vertices, directed=T)#here if I used directed=FALSE, I will lost my p_value information as well as weight information. 
+For_WIL_net1 # IGRAPH 0e98722 DNW- 1130 1275770 --
+E(For_WIL_net1)$weight[1:10]
+
+# convert directed network to undirected network
+
+For_WIL_net2<-as.undirected(For_WIL_net1 ,mode = 'mutual',edge.attr.comb = "mean") # as a result, weight, p_value and width of edges are all averaged for mutual edges.
+For_WIL_net2 # IGRAPH bf73674 UNW- 1130 637885 --
+E(For_WIL_net2)$weight[1:10]
+E(For_WIL_net2)$weight[1:10]
+E(For_WIL_net2)$p_value[1:10]
+E(For_WIL_net2)$width[1:10]
+
+## simplify the network from For_WIL_net3
+
+#1)  remove non_significant edges with alpha=0.05
+
+summary(E(For_WIL_net2)$p_value<0.05) #TRUE 49293 and FALSE 588592  
+
+For_WIL_net3<-delete.edges(For_WIL_net2,which(E(For_WIL_net2)$p_value>=0.05))
+For_WIL_net3 # IGRAPH abe9aee UNW- 1130 49293 --
+summary(degree(For_WIL_net3)==0) # all of the nodes has connection to others
+summary(E(For_WIL_net3)$weight>0) # 24732 positive interactions, 24561 nagative interactions
+
+#2) remove non-significant edges with alpha=0.001
+
+summary(E(For_WIL_net2)$p_value<0.001) # TRUE 5408, FALSE 632477
+For_WIL_net4<-delete.edges(For_WIL_net2,which(E(For_WIL_net2)$p_value>=0.001))
+For_WIL_net4 # IGRAPH 0bcc7d4 UNW- 1130 5408 --
+For_WIL_net4<-delete.vertices(For_WIL_net4,degree(For_WIL_net4)==0) # IGRAPH 66aef8d UNW- 1109 5408 --
+
+#3) further simplify the network based on degree
+barplot(sort(degree(For_WIL_net4)),main = "For_WIL_net4_barplot")
+summary(degree(For_WIL_net4)>20) # 94 nodes with degree larger than 20
+For_WIL_net5<-delete.vertices(For_WIL_net4,which(degree(For_WIL_net4)<=20))
+For_WIL_net5# IGRAPH cce74d7 UNW- 94 672 -- 
+summary(E(For_WIL_net5)$weight>0) # 158 positive and 134 negative
+
+# top 50
+
+For_WIL_net6<-delete.vertices(For_WIL_net4,labels(sort(degree(For_WIL_net4),FALSE)[c(1:(length(V(For_WIL_net4)$name)-50))]))
+For_WIL_net6<-delete.vertices(For_WIL_net6,degree(For_WIL_net6)==0) #IGRAPH 627a03a UNW- 50 305 --
+summary(E(For_WIL_net6)$weight>0) # 185 positive and 120 negative
+
+# top100
+For_WIL_net7<-delete.vertices(For_WIL_net4,labels(sort(degree(For_WIL_net4),FALSE)[c(1:(length(V(For_WIL_net4)$name)-100))]))
+For_WIL_net7<-delete.vertices(For_WIL_net7,degree(For_WIL_net7)==0) #IGRAPH 45a434a UNW- 100 711 --
+summary(E(For_WIL_net7)$weight>0) # 385 positive and 326 negative
+```
+
+
+## Plot network
+
+```{r}
+
+tiff('/Users/fangliu/Documents/2016_cultivar_project/R_analysis/SparCC_3rd/For_WIL_net4.tiff', units="in", width=10, height=8, res=300)
+plot(For_WIL_net4,edge.arrow.size=0,edge.width=abs(E(For_WIL_net4)$width/4),vertex.color=V(For_WIL_net4)$vertex_color,vertex.frame.color="#555555",vertex.label=NA,edge.color=c("#ff8989","#9fe899")[1+(E(For_WIL_net4)$weight>0)],vertex.size=degree(For_WIL_net4)/10,layout=layout_with_fr (For_WIL_net4),main="For_WIL_net4") # green edges means positive correlation and red edges mean negative correlation
+dev.off()
+
+#plot(For_WIL_net5,edge.arrow.size=0,edge.width=abs(E(For_WIL_net5)$width/3),vertex.color=V(For_WIL_net5)$vertex_color,vertex.frame.color="#555555",vertex.label=V(For_WIL_net5)$label,edge.color=c("#ff8989","#9fe899")[1+(E(For_WIL_net5)$weight>0)],vertex.label.cex=.8,vertex.size=degree(For_WIL_net5)/2,layout=layout_with_dh (For_WIL_net5),main="For_WIL_net5")
+
+tiff('/Users/fangliu/Documents/2016_cultivar_project/R_analysis/SparCC_3rd/For_WIL_net6.tiff', units="in", width=10, height=8, res=300)
+plot(For_WIL_net6,edge.arrow.size=0,edge.width=abs(E(For_WIL_net6)$width/3),vertex.color=V(For_WIL_net6)$vertex_color,vertex.frame.color="#555555",vertex.label=V(For_WIL_net6)$label,vertex.label.color="black",vertex.label.cex=.8,vertex.label.font=2,vertex.label.dist=0,edge.color=c("#ff8989","#9fe899")[1+(E(For_WIL_net6)$weight>0)],vertex.size=degree(For_WIL_net6)/3,layout=layout_with_dh (For_WIL_net6),main="For_WIL_net6")
+dev.off()
+
+tiff('/Users/fangliu/Documents/2016_cultivar_project/R_analysis/SparCC_3rd/For_WIL_net7.tiff', units="in", width=10, height=8, res=300)
+plot(For_WIL_net7,edge.arrow.size=0,edge.width=abs(E(For_WIL_net7)$width/3),vertex.color=V(For_WIL_net7)$vertex_color,vertex.frame.color="#555555",vertex.label=V(For_WIL_net7)$label,vertex.label.color="black",vertex.label.cex=.8,vertex.label.font=2,vertex.label.dist=0,edge.color=c("#ff8989","#9fe899")[1+(E(For_WIL_net7)$weight>0)],vertex.size=degree(For_WIL_net7)/3,layout=layout_with_dh (For_WIL_net7),main="For_WIL_net7")
+dev.off()
+```
+
+-----------------------------------
+#        For_DRT dataset
+-----------------------------------
+```{r}
+For_DRT_phyloseq<-subset_samples(cultivar_phyloseq,Treat=="Forest_DRT")
+For_DRT_phyloseq
+sort(taxa_sums(For_DRT_phyloseq),TRUE)[1100]
+For_DRT_phyloseq<-filter_taxa(For_DRT_phyloseq,function(x) sum(x)>=8,prune = TRUE)
+For_DRT_phyloseq # 1163 taxa across 8 samples
+For_DRT_OTU_SparCC<-data.frame(row.names(tax_table(For_DRT_phyloseq)),otu_table(For_DRT_phyloseq))
+#write.csv(For_DRT_OTU_SparCC, file = "For_DRT_OTU_SparCC.csv",row.names = TRUE)
+```
+
+## import SparCC and p_value matrix into R 
+
+```{r}
+# Read in SparCC correlation matrix
+For_DRT_SparCC_cor<-read.csv("For_CV2_OTU_cor_sparcc.csv",header = TRUE,row.names = 1)
+For_DRT_SparCC_cor<-as.matrix(For_DRT_SparCC_cor)
+dim(For_DRT_SparCC_cor)
+For_DRT_SparCC_cor[1:5,1:5]
+
+# Read in corresponding p_value dataframe
+For_DRT_SparCC_pvalue<-read.csv("For_CV2_OTU_two_sided_pvalue.csv",header = TRUE,row.names = 1)
+For_DRT_SparCC_pvalue<-as.matrix(For_DRT_SparCC_pvalue)
+dim(For_DRT_SparCC_pvalue)
+For_DRT_SparCC_pvalue[1:5,1:5]
+```
+
+
+## Generate vertices information and add relative abundance information to vertices and color information
+
+
+```{r}
+r_For_DRT_phyloseq<-transform_sample_counts(For_DRT_phyloseq,function(x) x/sum(x))
+
+For_DRT_vertex<-data.frame(OtuID=taxa_names(r_For_DRT_phyloseq),tax_table(r_For_DRT_phyloseq),size=taxa_sums(r_For_DRT_phyloseq)/length(sample_sums(r_For_DRT_phyloseq))) # Here size are the average relative abundance of each OTU across all samples within same treatment
+dim(For_DRT_vertex)
+For_DRT_vertex[1:5,]
+For_DRT_vertex<-For_DRT_vertex[,c(1,3,7,8)]
+head(For_DRT_vertex)
+levels<-factor(c("Bacteria_unclassified","Planctomycetes","Verrucomicrobia","Proteobacteria","Acidobacteria","Bacteroidetes","Actinobacteria","TM7","Gemmatimonadetes","Chlamydiae","Firmicutes","Chloroflexi","OD1", "Armatimonadetes","Nitrospira","BRC1","WS3","Tenericutes","Spirochaetes"))
+
+labels<-c('#9b9696','#ffee32','#f2701a','#b6cc0e','#ed5567','#07aeba','#3a44ff','#f936f6','#723434','#8ae2cc','#316022','#85f785','#be85f7','#990101','#b105fc','#fc05ba','#fc0505','#210000','#bc883a')
+
+#tiff ('Phylum_color_pie_plot.tiff', units="in", width=10, height=8, res=300)
+#pie(rep(1,19),col=labels,labels = levels,radius = 1.0)
+#dev.off()
+
+For_DRT_vertex$color<-factor(For_DRT_vertex$Phylum,levels = levels,labels=labels)
+dim(For_DRT_vertex)
+For_DRT_vertex[1:5,]
+
+For_DRT_vertex<-join (For_DRT_vertex,cultivar_meta,by="OtuID") # Originally, I used merge function, but it turned out to be problematic, because after merge it will The rows are by default lexicographically sorted on the common columns. To resulve this problem, I changed merge function to joint function.
+
+dim(For_DRT_vertex)
+For_DRT_vertex[1:5,]
+```
+
+
+## Creat links and have a look at edge and vertex information
+
+```{r}
+# read SparCC correlation matrix and p_value matrix to igraph
+For_DRT_net<-graph_from_adjacency_matrix(For_DRT_SparCC_cor,weighted = TRUE)
+For_DRT_net  ## IGRAPH eb60b08 DNW- 1163 1352569 -- 
+summary(V(For_DRT_net)$name==as.character(For_DRT_vertex$OtuID)) 
+V(For_DRT_net)$name[1:5]
+E(For_DRT_net)$weight[1:5] # here the weight are just the SparCC coefficience
+
+# Add vertex information to the network
+V(For_DRT_net)$vertex_color<-as.character(For_DRT_vertex$color)
+V(For_DRT_net)$size<-For_DRT_vertex$size
+V(For_DRT_net)$Phylum<-as.character(For_DRT_vertex$Phylum)
+V(For_DRT_net)$label<-as.character(For_DRT_vertex$label)
+
+# Add edge information (p_value) to the network
+E(For_DRT_net)$p_value<-For_DRT_SparCC_pvalue
+E(For_DRT_net)$p_value[1:10]
+
+## Add edge width to the network
+E(For_DRT_net)$width<-E(For_DRT_net)$weight*10
+E(For_DRT_net)$width
+```
+
+
+------------------------------------------------------------------------------------------------------------------------------------------
+In order to simplify the network, including remove of loop and mutual edges. If using simplify function on Bulk_net, this will loose p_value and edge color information (which indicate if the interaction are negarive or positive)
+
+To solve this problem, I will write out the edge and vertices in dataframe format and read into these two dataframe and modify the edge information globally before use ``graph_from_data_frame`` to create network object.
+-----------------------------------------------------------------------------------------------------------------------------------------
+
+
+## write out edges and vertices in dataframe format, and edit on the network
+
+```{r}
+
+# -- generate edge dataframe from whole network---
+
+For_DRT_edges<-as_data_frame(For_DRT_net,what = "edges")
+#For_DRT_edges
+dim(For_DRT_edges) #  1352569 rows and 5 columns
+head(For_DRT_edges)
+# Here the weight indicate the strength of interaction (SparCC value), p_value is the significance of interactions nad width is formulated based on weight * 40.
+
+# -- generate vertices dataframe from whole network---
+
+For_DRT_vertices<-as_data_frame(For_DRT_net,what = "vertices")
+dim(For_DRT_vertices)
+head(For_DRT_vertices)
+
+# remove edges that from and to the same nodes(selfloops)
+
+For_DRT_edges<-For_DRT_edges[which(For_DRT_edges$from!=For_DRT_edges$to),]
+dim(For_DRT_edges) # 1351406 rows and 5 columns
+head(For_DRT_edges)
+
+# Creat a new network using the above vertices and edge data frame
+For_DRT_net1 <- graph_from_data_frame(d=For_DRT_edges, vertices=For_DRT_vertices, directed=T)#here if I used directed=FALSE, I will lost my p_value information as well as weight information. 
+For_DRT_net1 # IGRAPH 11b7889 DNW- 1163 1351406 --
+E(For_DRT_net1)$weight[1:10]
+
+# convert directed network to undirected network
+
+For_DRT_net2<-as.undirected(For_DRT_net1 ,mode = 'mutual',edge.attr.comb = "mean") # as a result, weight, p_value and width of edges are all averaged for mutual edges.
+For_DRT_net2 # IGRAPH b5c799d UNW- 1163 675703 --
+E(For_DRT_net2)$weight[1:10]
+E(For_DRT_net2)$weight[1:10]
+E(For_DRT_net2)$p_value[1:10]
+E(For_DRT_net2)$width[1:10]
+
+
+## simplify the network from For_DRT_net3
+
+#1)  remove non_significant edges with alpha=0.05
+
+summary(E(For_DRT_net2)$p_value<0.05) #TRUE 49352 and FALSE 626351  
+
+For_DRT_net3<-delete.edges(For_DRT_net2,which(E(For_DRT_net2)$p_value>=0.05))
+For_DRT_net3 # IGRAPH c541828 UNW- 1163 49352 --
+summary(degree(For_DRT_net3)==0) # all of the nodes has connection to others
+summary(E(For_DRT_net3)$weight>0) # 24639 positive interactions, 24713 nagative interactions
+
+#2) remove non-significant edges with alpha=0.001
+
+summary(E(For_DRT_net2)$p_value<0.001) # TRUE 4780, FALSE 670923
+For_DRT_net4<-delete.edges(For_DRT_net2,which(E(For_DRT_net2)$p_value>=0.001))
+For_DRT_net4 # IGRAPH f51708f UNW- 1163 4780 --
+For_DRT_net4<-delete.vertices(For_DRT_net4,degree(For_DRT_net4)==0) # IGRAPH 70e8950 UNW- 1141 4780 --
+
+#3) further simplify the network based on degree
+barplot(sort(degree(For_DRT_net4)),main = "For_DRT_net4_barplot")
+summary(degree(For_DRT_net4)>20) # 28 nodes with degree larger than 20
+For_DRT_net5<-delete.vertices(For_DRT_net4,which(degree(For_DRT_net4)<=20))
+For_DRT_net5# IGRAPH df9c1b5 UNW- 28 32 --
+summary(E(For_DRT_net5)$weight>0) # 24 positive and 8 negative
+
+# top 50
+
+For_DRT_net6<-delete.vertices(For_DRT_net4,labels(sort(degree(For_DRT_net4),FALSE)[c(1:(length(V(For_DRT_net4)$name)-50))]))
+For_DRT_net6<-delete.vertices(For_DRT_net6,degree(For_DRT_net6)==0) #IGRAPH 1d9b2dc UNW- 49 91 --
+summary(E(For_DRT_net6)$weight>0) # 64 positive and 27 negative
+
+# top100
+For_DRT_net7<-delete.vertices(For_DRT_net4,labels(sort(degree(For_DRT_net4),FALSE)[c(1:(length(V(For_DRT_net4)$name)-100))]))
+For_DRT_net7<-delete.vertices(For_DRT_net7,degree(For_DRT_net7)==0) #IGRAPH 29b3c4e UNW- 98 272 -- 
+summary(E(For_DRT_net7)$weight>0) # 175 positive and 97 negative
+```
+
+
+## Plot network
+
+```{r}
+
+tiff('/Users/fangliu/Documents/2016_cultivar_project/R_analysis/SparCC_3rd/For_DRT_net4.tiff', units="in", width=10, height=8, res=300)
+plot(For_DRT_net4,edge.arrow.size=0,edge.width=abs(E(For_DRT_net4)$width/4),vertex.color=V(For_DRT_net4)$vertex_color,vertex.frame.color="#555555",vertex.label=NA,edge.color=c("#ff8989","#9fe899")[1+(E(For_DRT_net4)$weight>0)],vertex.size=degree(For_DRT_net4)/10,layout=layout_with_fr (For_DRT_net4),main="For_DRT_net4") # green edges means positive correlation and red edges mean negative correlation
+dev.off()
+
+#plot(For_DRT_net5,edge.arrow.size=0,edge.width=abs(E(For_DRT_net5)$width/3),vertex.color=V(For_DRT_net5)$vertex_color,vertex.frame.color="#555555",vertex.label=V(For_DRT_net5)$label,edge.color=c("#ff8989","#9fe899")[1+(E(For_DRT_net5)$weight>0)],vertex.label.cex=.8,vertex.size=degree(For_DRT_net5)/1.5,layout=layout_with_dh (For_DRT_net5),main="For_DRT_net5")
+
+tiff('/Users/fangliu/Documents/2016_cultivar_project/R_analysis/SparCC_3rd/For_DRT_net6.tiff', units="in", width=10, height=8, res=300)
+plot(For_DRT_net6,edge.arrow.size=0,edge.width=abs(E(For_DRT_net6)$width/3),vertex.color=V(For_DRT_net6)$vertex_color,vertex.frame.color="#555555",vertex.label=V(For_DRT_net6)$label,vertex.label.color="black",vertex.label.cex=.8,vertex.label.font=2,vertex.label.dist=0,edge.color=c("#ff8989","#9fe899")[1+(E(For_DRT_net6)$weight>0)],vertex.size=degree(For_DRT_net6)/1.5,layout=layout_with_dh (For_DRT_net6),main="For_DRT_net6")
+dev.off()
+
+tiff('/Users/fangliu/Documents/2016_cultivar_project/R_analysis/SparCC_3rd/For_DRT_net7.tiff', units="in", width=10, height=8, res=300)
+plot(For_DRT_net7,edge.arrow.size=0,edge.width=abs(E(For_DRT_net7)$width/3),vertex.color=V(For_DRT_net7)$vertex_color,vertex.frame.color="#555555",vertex.label=V(For_DRT_net7)$label,vertex.label.color="black",vertex.label.cex=.8,vertex.label.font=2,vertex.label.dist=0,edge.color=c("#ff8989","#9fe899")[1+(E(For_DRT_net7)$weight>0)],vertex.size=degree(For_DRT_net7)/1.5,layout=layout_with_dh (For_DRT_net7),main="For_DRT_net7")
+dev.off()
+```
+
+
+-----------------------------------
+#        For_CNR dataset
+-----------------------------------
+```{r}
+For_CNR_phyloseq<-subset_samples(cultivar_phyloseq,Treat=="Forest_CNR")
+For_CNR_phyloseq
+sort(taxa_sums(For_CNR_phyloseq),TRUE)[1100]
+For_CNR_phyloseq<-filter_taxa(For_CNR_phyloseq,function(x) sum(x)>=11,prune = TRUE)
+For_CNR_phyloseq # 1124 OTUs across 9 sampels
+For_CNR_OTU_SparCC<-data.frame(row.names(tax_table(For_CNR_phyloseq)),otu_table(For_CNR_phyloseq))
+#write.csv(For_CNR_OTU_SparCC, file = "For_CNR_OTU_SparCC.csv",row.names = TRUE)
+```
+
+
+## import SparCC and p_value matrix into R 
+
+```{r}
+# Read in SparCC correlation matrix
+For_CNR_SparCC_cor<-read.csv("For_CV3_OTU_cor_sparcc.csv",header = TRUE,row.names = 1)
+For_CNR_SparCC_cor<-as.matrix(For_CNR_SparCC_cor)
+dim(For_CNR_SparCC_cor)
+For_CNR_SparCC_cor[1:5,1:5]
+
+# Read in corresponding p_value dataframe
+For_CNR_SparCC_pvalue<-read.csv("For_CV3_OTU_two_sided_pvalue.csv",header = TRUE,row.names = 1)
+For_CNR_SparCC_pvalue<-as.matrix(For_CNR_SparCC_pvalue)
+dim(For_CNR_SparCC_pvalue)
+For_CNR_SparCC_pvalue[1:5,1:5]
+```
+
+
+## Generate vertices information and add relative abundance information to vertices and color information
+
+
+```{r}
+r_For_CNR_phyloseq<-transform_sample_counts(For_CNR_phyloseq,function(x) x/sum(x))
+
+For_CNR_vertex<-data.frame(OtuID=taxa_names(r_For_CNR_phyloseq),tax_table(r_For_CNR_phyloseq),size=taxa_sums(r_For_CNR_phyloseq)/length(sample_sums(r_For_CNR_phyloseq))) # Here size are the average relative abundance of each OTU across all samples within same treatment
+dim(For_CNR_vertex)
+For_CNR_vertex[1:5,]
+For_CNR_vertex<-For_CNR_vertex[,c(1,3,7,8)]
+head(For_CNR_vertex)
+levels<-factor(c("Bacteria_unclassified","Planctomycetes","Verrucomicrobia","Proteobacteria","Acidobacteria","Bacteroidetes","Actinobacteria","TM7","Gemmatimonadetes","Chlamydiae","Firmicutes","Chloroflexi","OD1", "Armatimonadetes","Nitrospira","BRC1","WS3","Tenericutes","Spirochaetes"))
+
+labels<-c('#9b9696','#ffee32','#f2701a','#b6cc0e','#ed5567','#07aeba','#3a44ff','#f936f6','#723434','#8ae2cc','#316022','#85f785','#be85f7','#990101','#b105fc','#fc05ba','#fc0505','#210000','#bc883a')
+
+#tiff ('Phylum_color_pie_plot.tiff', units="in", width=10, height=8, res=300)
+#pie(rep(1,19),col=labels,labels = levels,radius = 1.0)
+#dev.off()
+
+For_CNR_vertex$color<-factor(For_CNR_vertex$Phylum,levels = levels,labels=labels)
+dim(For_CNR_vertex)
+For_CNR_vertex[1:5,]
+
+For_CNR_vertex<-join (For_CNR_vertex,cultivar_meta,by="OtuID") # Originally, I used merge function, but it turned out to be problematic, because after merge it will The rows are by default lexicographically sorted on the common columns. To resulve this problem, I changed merge function to joint function.
+
+dim(For_CNR_vertex)
+For_CNR_vertex[1:5,]
+```
+
+
+## Creat links and have a look at edge and vertex information
+
+```{r}
+# read SparCC correlation matrix and p_value matrix to igraph
+For_CNR_net<-graph_from_adjacency_matrix(For_CNR_SparCC_cor,weighted = TRUE)
+For_CNR_net  ## IGRAPH 4e00b93 DNW- 1124 1263376 --
+summary(V(For_CNR_net)$name==as.character(For_CNR_vertex$OtuID)) 
+V(For_CNR_net)$name[1:5]
+E(For_CNR_net)$weight[1:5] # here the weight are just the SparCC coefficience
+
+# Add vertex information to the network
+V(For_CNR_net)$vertex_color<-as.character(For_CNR_vertex$color)
+V(For_CNR_net)$size<-For_CNR_vertex$size
+V(For_CNR_net)$Phylum<-as.character(For_CNR_vertex$Phylum)
+V(For_CNR_net)$label<-as.character(For_CNR_vertex$label)
+
+# Add edge information (p_value) to the network
+E(For_CNR_net)$p_value<-For_CNR_SparCC_pvalue
+E(For_CNR_net)$p_value[1:10]
+
+## Add edge width to the network
+E(For_CNR_net)$width<-E(For_CNR_net)$weight*10
+E(For_CNR_net)$width
+```
+
+
+------------------------------------------------------------------------------------------------------------------------------------------
+In order to simplify the network, including remove of loop and mutual edges. If using simplify function on Bulk_net, this will loose p_value and edge color information (which indicate if the interaction are negarive or positive)
+
+To solve this problem, I will write out the edge and vertices in dataframe format and read into these two dataframe and modify the edge information globally before use ``graph_from_data_frame`` to create network object.
+-----------------------------------------------------------------------------------------------------------------------------------------
+
+
+## write out edges and vertices in dataframe format, and edit on the network
+
+```{r}
+
+# -- generate edge dataframe from whole network---
+
+For_CNR_edges<-as_data_frame(For_CNR_net,what = "edges")
+#For_CNR_edges
+dim(For_CNR_edges) # 1210000 rows and 5 columns
+head(For_CNR_edges)
+# Here the weight indicate the strength of interaction (SparCC value), p_value is the significance of interactions nad width is formulated based on weight * 40.
+
+# -- generate vertices dataframe from whole network---
+
+For_CNR_vertices<-as_data_frame(For_CNR_net,what = "vertices")
+dim(For_CNR_vertices)
+head(For_CNR_vertices)
+
+# remove edges that from and to the same nodes(selfloops)
+
+For_CNR_edges<-For_CNR_edges[which(For_CNR_edges$from!=For_CNR_edges$to),]
+dim(For_CNR_edges) # 1208900 rows and 5 columns
+head(For_CNR_edges)
+
+# Creat a new network using the above vertices and edge data frame
+For_CNR_net1 <- graph_from_data_frame(d=For_CNR_edges, vertices=For_CNR_vertices, directed=T)#here if I used directed=FALSE, I will lost my p_value information as well as weight information. 
+For_CNR_net1 # IGRAPH 266974e DNW- 1124 1262252 --
+E(For_CNR_net1)$weight[1:10]
+
+# convert directed network to undirected network
+
+For_CNR_net2<-as.undirected(For_CNR_net1 ,mode = 'mutual',edge.attr.comb = "mean") # as a result, weight, p_value and width of edges are all averaged for mutual edges.
+For_CNR_net2 # IGRAPH 73ecfc9 UNW- 1124 631126 --
+E(For_CNR_net2)$weight[1:10]
+E(For_CNR_net2)$weight[1:10]
+E(For_CNR_net2)$p_value[1:10]
+E(For_CNR_net2)$width[1:10]
+
+
+## simplify the network from For_CNR_net3
+
+#1)  remove non_significant edges with alpha=0.05
+
+summary(E(For_CNR_net2)$p_value<0.05) #TRUE 40111 and FALSE 591015  
+
+For_CNR_net3<-delete.edges(For_CNR_net2,which(E(For_CNR_net2)$p_value>=0.05))
+For_CNR_net3 # IGRAPH 0deaa4d UNW- 1124 40111 --
+summary(degree(For_CNR_net3)==0) # all of the nodes has connection to others
+summary(E(For_CNR_net3)$weight>0) # 20194 positive interactions, 19917 nagative interactions
+
+#2) remove non-significant edges with alpha=0.001
+
+summary(E(For_CNR_net2)$p_value<0.001) # TRUE 4058, FALSE 627068
+For_CNR_net4<-delete.edges(For_CNR_net2,which(E(For_CNR_net2)$p_value>=0.001))
+For_CNR_net4 # IGRAPH 041c16a UNW- 1124 4058 --
+For_CNR_net4<-delete.vertices(For_CNR_net4,degree(For_CNR_net4)==0) # IGRAPH 64d161d UNW- 1093 4058 -- 
+
+#3) further simplify the network based on degree
+barplot(sort(degree(For_CNR_net4)),main = "For_CNR_net4_barplot")
+summary(degree(For_CNR_net4)>20) # 26 nodes with degree larger than 20
+For_CNR_net5<-delete.vertices(For_CNR_net4,which(degree(For_CNR_net4)<=20))
+For_CNR_net5# IGRAPH 7ff2658 UNW- 26 45 -- 
+summary(E(For_CNR_net5)$weight>0) # 45 positive
+
+# top 50
+
+For_CNR_net6<-delete.vertices(For_CNR_net4,labels(sort(degree(For_CNR_net4),FALSE)[c(1:(length(V(For_CNR_net4)$name)-50))]))
+For_CNR_net6<-delete.vertices(For_CNR_net6,degree(For_CNR_net6)==0) #IGRAPH c965162 UNW- 42 92 --
+summary(E(For_CNR_net6)$weight>0) # 87 positive and 5 negative
+
+# top100
+For_CNR_net7<-delete.vertices(For_CNR_net4,labels(sort(degree(For_CNR_net4),FALSE)[c(1:(length(V(For_CNR_net4)$name)-100))]))
+For_CNR_net7<-delete.vertices(For_CNR_net7,degree(For_CNR_net7)==0) #IGRAPH e6f2584 UNW- 97 281 --
+summary(E(For_CNR_net7)$weight>0) # 214 positive and 67 negative
+```
+
+
+## Plot network
+
+```{r}
+
+tiff('/Users/fangliu/Documents/2016_cultivar_project/R_analysis/SparCC_3rd/For_CNR_net4.tiff', units="in", width=10, height=8, res=300)
+plot(For_CNR_net4,edge.arrow.size=0,edge.width=abs(E(For_CNR_net4)$width/4),vertex.color=V(For_CNR_net4)$vertex_color,vertex.frame.color="#555555",vertex.label=NA,edge.color=c("#ff8989","#9fe899")[1+(E(For_CNR_net4)$weight>0)],vertex.size=degree(For_CNR_net4)/10,layout=layout_with_fr (For_CNR_net4),main="For_CNR_net4") # green edges means positive correlation and red edges mean negative correlation
+dev.off()
+
+#plot(For_CNR_net5,edge.arrow.size=0,edge.width=abs(E(For_CNR_net5)$width/3),vertex.color=V(For_CNR_net5)$vertex_color,vertex.frame.color="#555555",vertex.label=V(For_CNR_net5)$label,edge.color=c("#ff8989","#9fe899")[1+(E(For_CNR_net5)$weight>0)],vertex.label.cex=.8,vertex.size=degree(For_CNR_net5)/1.5,layout=layout_with_dh (For_CNR_net5),main="For_CNR_net5")
+
+tiff('/Users/fangliu/Documents/2016_cultivar_project/R_analysis/SparCC_3rd/For_CNR_net6.tiff', units="in", width=10, height=8, res=300)
+plot(For_CNR_net6,edge.arrow.size=0,edge.width=abs(E(For_CNR_net6)$width/3),vertex.color=V(For_CNR_net6)$vertex_color,vertex.frame.color="#555555",vertex.label=V(For_CNR_net6)$label,vertex.label.color="black",vertex.label.cex=.8,vertex.label.font=2,vertex.label.dist=0,edge.color=c("#ff8989","#9fe899")[1+(E(For_CNR_net6)$weight>0)],vertex.size=degree(For_CNR_net6)/1.5,layout=layout_with_dh (For_CNR_net6),main="For_CNR_net6")
+dev.off()
+
+tiff('/Users/fangliu/Documents/2016_cultivar_project/R_analysis/SparCC_3rd/For_CNR_net7.tiff', units="in", width=10, height=8, res=300)
+plot(For_CNR_net7,edge.arrow.size=0,edge.width=abs(E(For_CNR_net7)$width/3),vertex.color=V(For_CNR_net7)$vertex_color,vertex.frame.color="#555555",vertex.label=V(For_CNR_net7)$label,vertex.label.color="black",vertex.label.cex=.8,vertex.label.font=2,vertex.label.dist=0,edge.color=c("#ff8989","#9fe899")[1+(E(For_CNR_net7)$weight>0)],vertex.size=degree(For_CNR_net7)/1.5,layout=layout_with_dh (For_CNR_net7),main="For_CNR_net7")
+dev.off()
+```
+-----------------------------------
+#        For_CV4 dataset
+-----------------------------------
+```{r}
+For_NNW_phyloseq<-subset_samples(cultivar_phyloseq,Treat=="Forest_NNW")
+For_NNW_phyloseq
+sort(taxa_sums(For_NNW_phyloseq),TRUE)[1100]
+For_NNW_phyloseq<-filter_taxa(For_NNW_phyloseq,function(x) sum(x)>=10,prune = TRUE)
+For_NNW_phyloseq # 1154 OTUs across 9 samples
+For_NNW_OTU_SparCC<-data.frame(row.names(tax_table(For_NNW_phyloseq)),otu_table(For_NNW_phyloseq))
+#write.csv(For_NNW_OTU_SparCC, file = "For_NNW_OTU_SparCC.csv",row.names = TRUE)
+```
+
+
+## import SparCC and p_value matrix into R 
+
+```{r}
+# Read in SparCC correlation matrix
+For_NNW_SparCC_cor<-read.csv("For_CV4_OTU_cor_sparcc.csv",header = TRUE,row.names = 1)
+For_NNW_SparCC_cor<-as.matrix(For_NNW_SparCC_cor)
+dim(For_NNW_SparCC_cor)
+For_NNW_SparCC_cor[1:5,1:5]
+
+# Read in corresponding p_value dataframe
+For_NNW_SparCC_pvalue<-read.csv("For_CV4_OTU_two_sided_pvalue.csv",header = TRUE,row.names = 1)
+For_NNW_SparCC_pvalue<-as.matrix(For_NNW_SparCC_pvalue)
+dim(For_NNW_SparCC_pvalue)
+For_NNW_SparCC_pvalue[1:5,1:5]
+```
+
+
+## Generate vertices information and add relative abundance information to vertices and color information
+
+
+```{r}
+r_For_NNW_phyloseq<-transform_sample_counts(For_NNW_phyloseq,function(x) x/sum(x))
+
+For_NNW_vertex<-data.frame(OtuID=taxa_names(r_For_NNW_phyloseq),tax_table(r_For_NNW_phyloseq),size=taxa_sums(r_For_NNW_phyloseq)/length(sample_sums(r_For_NNW_phyloseq))) # Here size are the average relative abundance of each OTU across all samples within same treatment
+dim(For_NNW_vertex)
+For_NNW_vertex[1:5,]
+For_NNW_vertex<-For_NNW_vertex[,c(1,3,7,8)]
+head(For_NNW_vertex)
+levels<-factor(c("Bacteria_unclassified","Planctomycetes","Verrucomicrobia","Proteobacteria","Acidobacteria","Bacteroidetes","Actinobacteria","TM7","Gemmatimonadetes","Chlamydiae","Firmicutes","Chloroflexi","OD1", "Armatimonadetes","Nitrospira","BRC1","WS3","Tenericutes","Spirochaetes"))
+
+labels<-c('#9b9696','#ffee32','#f2701a','#b6cc0e','#ed5567','#07aeba','#3a44ff','#f936f6','#723434','#8ae2cc','#316022','#85f785','#be85f7','#990101','#b105fc','#fc05ba','#fc0505','#210000','#bc883a')
+
+#tiff ('Phylum_color_pie_plot.tiff', units="in", width=10, height=8, res=300)
+#pie(rep(1,19),col=labels,labels = levels,radius = 1.0)
+#dev.off()
+
+For_NNW_vertex$color<-factor(For_NNW_vertex$Phylum,levels = levels,labels=labels)
+dim(For_NNW_vertex)
+For_NNW_vertex[1:5,]
+
+For_NNW_vertex<-join (For_NNW_vertex,cultivar_meta,by="OtuID") # Originally, I used merge function, but it turned out to be problematic, because after merge it will The rows are by default lexicographically sorted on the common columns. To resulve this problem, I changed merge function to joint function.
+
+dim(For_NNW_vertex)
+For_NNW_vertex[1:5,]
+```
+
+
+## Creat links and have a look at edge and vertex information
+
+```{r}
+# read SparCC correlation matrix and p_value matrix to igraph
+For_NNW_net<-graph_from_adjacency_matrix(For_NNW_SparCC_cor,weighted = TRUE)
+For_NNW_net  ## IGRAPH d1b5714 DNW- 1154 1331716 --
+summary(V(For_NNW_net)$name==as.character(For_NNW_vertex$OtuID)) 
+V(For_NNW_net)$name[1:5]
+E(For_NNW_net)$weight[1:5] # here the weight are just the SparCC coefficience
+
+# Add vertex information to the network
+V(For_NNW_net)$vertex_color<-as.character(For_NNW_vertex$color)
+V(For_NNW_net)$size<-For_NNW_vertex$size
+V(For_NNW_net)$Phylum<-as.character(For_NNW_vertex$Phylum)
+V(For_NNW_net)$label<-as.character(For_NNW_vertex$label)
+
+# Add edge information (p_value) to the network
+E(For_NNW_net)$p_value<-For_NNW_SparCC_pvalue
+E(For_NNW_net)$p_value[1:10]
+
+## Add edge width to the network
+E(For_NNW_net)$width<-E(For_NNW_net)$weight*10
+E(For_NNW_net)$width
+```
+
+
+------------------------------------------------------------------------------------------------------------------------------------------
+In order to simplify the network, including remove of loop and mutual edges. If using simplify function on Bulk_net, this will loose p_value and edge color information (which indicate if the interaction are negarive or positive)
+
+To solve this problem, I will write out the edge and vertices in dataframe format and read into these two dataframe and modify the edge information globally before use ``graph_from_data_frame`` to create network object.
+-----------------------------------------------------------------------------------------------------------------------------------------
+
+
+## write out edges and vertices in dataframe format, and edit on the network
+
+```{r}
+
+# -- generate edge dataframe from whole network---
+
+For_NNW_edges<-as_data_frame(For_NNW_net,what = "edges")
+dim(For_NNW_edges) # 1331716 rows and 5 columns
+head(For_NNW_edges)
+# Here the weight indicate the strength of interaction (SparCC value), p_value is the significance of interactions nad width is formulated based on weight * 40.
+
+# -- generate vertices dataframe from whole network---
+
+For_NNW_vertices<-as_data_frame(For_NNW_net,what = "vertices")
+dim(For_NNW_vertices)
+head(For_NNW_vertices)
+
+# remove edges that from and to the same nodes(selfloops)
+
+For_NNW_edges<-For_NNW_edges[which(For_NNW_edges$from!=For_NNW_edges$to),]
+dim(For_NNW_edges) # 1330562 rows and 5 columns
+head(For_NNW_edges)
+
+# Creat a new network using the above vertices and edge data frame
+For_NNW_net1 <- graph_from_data_frame(d=For_NNW_edges, vertices=For_NNW_vertices, directed=T)#here if I used directed=FALSE, I will lost my p_value information as well as weight information. 
+For_NNW_net1 # IGRAPH 157b6f5 DNW- 1154 1330562 --
+E(For_NNW_net1)$weight[1:10]
+
+# convert directed network to undirected network
+
+For_NNW_net2<-as.undirected(For_NNW_net1 ,mode = 'mutual',edge.attr.comb = "mean") # as a result, weight, p_value and width of edges are all averaged for mutual edges.
+For_NNW_net2 # IGRAPH 5bf92d1 UNW- 1154 665281 --
+E(For_NNW_net2)$weight[1:10]
+E(For_NNW_net2)$weight[1:10]
+E(For_NNW_net2)$p_value[1:10]
+E(For_NNW_net2)$width[1:10]
+
+
+## simplify the network from For_NNW_net3
+
+#1)  remove non_significant edges with alpha=0.05
+
+summary(E(For_NNW_net2)$p_value<0.05) #TRUE 47765 and FALSE 617516   
+
+For_NNW_net3<-delete.edges(For_NNW_net2,which(E(For_NNW_net2)$p_value>=0.05))
+For_NNW_net3 # IGRAPH eb084c2 UNW- 1154 47765 --
+summary(degree(For_NNW_net3)==0) # all of the nodes has connection to others
+summary(E(For_NNW_net3)$weight>0) # 24105 positive interactions, 23660 nagative interactions
+
+#2) remove non-significant edges with alpha=0.001
+
+summary(E(For_NNW_net2)$p_value<0.001) # TRUE 4993, FALSE 660288
+For_NNW_net4<-delete.edges(For_NNW_net2,which(E(For_NNW_net2)$p_value>=0.001))
+For_NNW_net4 # IGRAPH 9ad6a4b UNW- 1154 4993 --
+For_NNW_net4<-delete.vertices(For_NNW_net4,degree(For_NNW_net4)==0) # IGRAPH 5d0faea UNW- 1141 4993 --
+
+#3) further simplify the network based on degree
+barplot(sort(degree(For_NNW_net4)),main = "For_NNW_net4_barplot")
+summary(degree(For_NNW_net4)>20) # 59 nodes with degree larger than 20
+For_NNW_net5<-delete.vertices(For_NNW_net4,which(degree(For_NNW_net4)<=20))
+For_NNW_net5# IGRAPH e4ce264 UNW- 59 258 --
+summary(E(For_NNW_net5)$weight>0) # 198 positive and 60 negative
+
+# top 50
+
+For_NNW_net6<-delete.vertices(For_NNW_net4,labels(sort(degree(For_NNW_net4),FALSE)[c(1:(length(V(For_NNW_net4)$name)-50))]))
+For_NNW_net6<-delete.vertices(For_NNW_net6,degree(For_NNW_net6)==0) #IGRAPH ecb1c59 UNW- 46 203 --
+summary(E(For_NNW_net6)$weight>0) # 172 positive and 31 negative
+
+# top100
+For_NNW_net7<-delete.vertices(For_NNW_net4,labels(sort(degree(For_NNW_net4),FALSE)[c(1:(length(V(For_NNW_net4)$name)-100))]))
+For_NNW_net7<-delete.vertices(For_NNW_net7,degree(For_NNW_net7)==0) #IGRAPH 549dd9d UNW- 96 444 --
+summary(E(For_NNW_net7)$weight>0) # 317 positive and 127 negative
+```
+
+
+## Plot network
+
+```{r}
+
+tiff('/Users/fangliu/Documents/2016_cultivar_project/R_analysis/SparCC_3rd/For_NNW_net4.tiff', units="in", width=10, height=8, res=300)
+plot(For_NNW_net4,edge.arrow.size=0,edge.width=abs(E(For_NNW_net4)$width/4),vertex.color=V(For_NNW_net4)$vertex_color,vertex.frame.color="#555555",vertex.label=NA,edge.color=c("#ff8989","#9fe899")[1+(E(For_NNW_net4)$weight>0)],vertex.size=degree(For_NNW_net4)/10,layout=layout_with_fr (For_NNW_net4),main="For_NNW_net4") # green edges means positive correlation and red edges mean negative correlation
+dev.off()
+
+#plot(For_NNW_net5,edge.arrow.size=0,edge.width=abs(E(For_NNW_net5)$width/3),vertex.color=V(For_NNW_net5)$vertex_color,vertex.frame.color="#555555",vertex.label=V(For_NNW_net5)$label,edge.color=c("#ff8989","#9fe899")[1+(E(For_NNW_net5)$weight>0)],vertex.label.cex=.8,vertex.size=degree(For_NNW_net5)/1.5,layout=layout_with_dh (For_NNW_net5),main="For_NNW_net5")
+
+tiff('/Users/fangliu/Documents/2016_cultivar_project/R_analysis/SparCC_3rd/For_NNW_net6.tiff', units="in", width=10, height=8, res=300)
+plot(For_NNW_net6,edge.arrow.size=0,edge.width=abs(E(For_NNW_net6)$width/3),vertex.color=V(For_NNW_net6)$vertex_color,vertex.frame.color="#555555",vertex.label=V(For_NNW_net6)$label,vertex.label.color="black",vertex.label.cex=.8,vertex.label.font=2,vertex.label.dist=0,edge.color=c("#ff8989","#9fe899")[1+(E(For_NNW_net6)$weight>0)],vertex.size=degree(For_NNW_net6)/1.5,layout=layout_with_dh (For_NNW_net6),main="For_NNW_net6")
+dev.off()
+
+tiff('/Users/fangliu/Documents/2016_cultivar_project/R_analysis/SparCC_3rd/For_NNW_net7.tiff', units="in", width=10, height=8, res=300)
+plot(For_NNW_net7,edge.arrow.size=0,edge.width=abs(E(For_NNW_net7)$width/3),vertex.color=V(For_NNW_net7)$vertex_color,vertex.frame.color="#555555",vertex.label=V(For_NNW_net7)$label,vertex.label.color="black",vertex.label.cex=.8,vertex.label.font=2,vertex.label.dist=0,edge.color=c("#ff8989","#9fe899")[1+(E(For_NNW_net7)$weight>0)],vertex.size=degree(For_NNW_net7)/1.5,layout=layout_with_dh (For_NNW_net7),main="For_NNW_net7")
+dev.off()
+```
+-----------------------------------
+#        For_SOJ dataset
+-----------------------------------
+```{r}
+For_SOJ_phyloseq<-subset_samples(cultivar_phyloseq,Treat=="Forest_SOJ")
+For_SOJ_phyloseq
+sort(taxa_sums(For_SOJ_phyloseq),TRUE)[1100]
+For_SOJ_phyloseq<-filter_taxa(For_SOJ_phyloseq,function(x) sum(x)>=8,prune = TRUE)
+For_SOJ_phyloseq
+For_SOJ_OTU_SparCC<-data.frame(row.names(tax_table(For_SOJ_phyloseq)),otu_table(For_SOJ_phyloseq))
+#write.csv(For_SOJ_OTU_SparCC, file = "For_SOJ_OTU_SparCC.csv",row.names = TRUE)
+```
+
+
+## import SparCC and p_value matrix into R 
+
+```{r}
+# Read in SparCC correlation matrix
+For_SOJ_SparCC_cor<-read.csv("For_CV5_OTU_cor_sparcc.csv",header = TRUE,row.names = 1)
+For_SOJ_SparCC_cor<-as.matrix(For_SOJ_SparCC_cor)
+dim(For_SOJ_SparCC_cor)
+For_SOJ_SparCC_cor[1:5,1:5]
+
+# Read in corresponding p_value dataframe
+For_SOJ_SparCC_pvalue<-read.csv("For_CV5_OTU_two_sided_pvalue.csv",header = TRUE,row.names = 1)
+For_SOJ_SparCC_pvalue<-as.matrix(For_SOJ_SparCC_pvalue)
+dim(For_SOJ_SparCC_pvalue)
+For_SOJ_SparCC_pvalue[1:5,1:5]
+```
+
+
+## Generate vertices information and add relative abundance information to vertices and color information
+
+
+```{r}
+r_For_SOJ_phyloseq<-transform_sample_counts(For_SOJ_phyloseq,function(x) x/sum(x))
+
+For_SOJ_vertex<-data.frame(OtuID=taxa_names(r_For_SOJ_phyloseq),tax_table(r_For_SOJ_phyloseq),size=taxa_sums(r_For_SOJ_phyloseq)/length(sample_sums(r_For_SOJ_phyloseq))) # Here size are the average relative abundance of each OTU across all samples within same treatment
+dim(For_SOJ_vertex)
+For_SOJ_vertex[1:5,]
+For_SOJ_vertex<-For_SOJ_vertex[,c(1,3,7,8)]
+head(For_SOJ_vertex)
+levels<-factor(c("Bacteria_unclassified","Planctomycetes","Verrucomicrobia","Proteobacteria","Acidobacteria","Bacteroidetes","Actinobacteria","TM7","Gemmatimonadetes","Chlamydiae","Firmicutes","Chloroflexi","OD1", "Armatimonadetes","Nitrospira","BRC1","WS3","Tenericutes","Spirochaetes"))
+
+labels<-c('#9b9696','#ffee32','#f2701a','#b6cc0e','#ed5567','#07aeba','#3a44ff','#f936f6','#723434','#8ae2cc','#316022','#85f785','#be85f7','#990101','#b105fc','#fc05ba','#fc0505','#210000','#bc883a')
+
+#tiff ('Phylum_color_pie_plot.tiff', units="in", width=10, height=8, res=300)
+#pie(rep(1,19),col=labels,labels = levels,radius = 1.0)
+#dev.off()
+
+For_SOJ_vertex$color<-factor(For_SOJ_vertex$Phylum,levels = levels,labels=labels)
+dim(For_SOJ_vertex)
+For_SOJ_vertex[1:5,]
+
+For_SOJ_vertex<-join (For_SOJ_vertex,cultivar_meta,by="OtuID") # Originally, I used merge function, but it turned out to be problematic, because after merge it will The rows are by default lexicographically sorted on the common columns. To resulve this problem, I changed merge function to joint function.
+
+dim(For_SOJ_vertex)
+For_SOJ_vertex[1:5,]
+```
+
+
+## Creat links and have a look at edge and vertex information
+
+```{r}
+# read SparCC correlation matrix and p_value matrix to igraph
+For_SOJ_net<-graph_from_adjacency_matrix(For_SOJ_SparCC_cor,weighted = TRUE)
+For_SOJ_net  ## IGRAPH c3f07ef DNW- 1153 1329409 --
+summary(V(For_SOJ_net)$name==as.character(For_SOJ_vertex$OtuID)) 
+V(For_SOJ_net)$name[1:5]
+E(For_SOJ_net)$weight[1:5] # here the weight are just the SparCC coefficience
+
+# Add vertex information to the network
+V(For_SOJ_net)$vertex_color<-as.character(For_SOJ_vertex$color)
+V(For_SOJ_net)$size<-For_SOJ_vertex$size
+V(For_SOJ_net)$Phylum<-as.character(For_SOJ_vertex$Phylum)
+V(For_SOJ_net)$label<-as.character(For_SOJ_vertex$label)
+
+# Add edge information (p_value) to the network
+E(For_SOJ_net)$p_value<-For_SOJ_SparCC_pvalue
+E(For_SOJ_net)$p_value[1:10]
+
+## Add edge width to the network
+E(For_SOJ_net)$width<-E(For_SOJ_net)$weight*10
+E(For_SOJ_net)$width
+```
+
+
+------------------------------------------------------------------------------------------------------------------------------------------
+In order to simplify the network, including remove of loop and mutual edges. If using simplify function on Bulk_net, this will loose p_value and edge color information (which indicate if the interaction are negarive or positive)
+
+To solve this problem, I will write out the edge and vertices in dataframe format and read into these two dataframe and modify the edge information globally before use ``graph_from_data_frame`` to create network object.
+-----------------------------------------------------------------------------------------------------------------------------------------
+
+
+## write out edges and vertices in dataframe format, and edit on the network
+
+```{r}
+
+# -- generate edge dataframe from whole network---
+
+For_SOJ_edges<-as_data_frame(For_SOJ_net,what = "edges")
+dim(For_SOJ_edges) # 1329409 rows and 5 columns
+head(For_SOJ_edges)
+# Here the weight indicate the strength of interaction (SparCC value), p_value is the significance of interactions nad width is formulated based on weight * 40.
+
+# -- generate vertices dataframe from whole network---
+
+For_SOJ_vertices<-as_data_frame(For_SOJ_net,what = "vertices")
+dim(For_SOJ_vertices)
+head(For_SOJ_vertices)
+
+# remove edges that from and to the same nodes(selfloops)
+
+For_SOJ_edges<-For_SOJ_edges[which(For_SOJ_edges$from!=For_SOJ_edges$to),]
+dim(For_SOJ_edges) # 1328256 rows and 5 columns
+head(For_SOJ_edges)
+
+# Creat a new network using the above vertices and edge data frame
+For_SOJ_net1 <- graph_from_data_frame(d=For_SOJ_edges, vertices=For_SOJ_vertices, directed=T)#here if I used directed=FALSE, I will lost my p_value information as well as weight information. 
+For_SOJ_net1 # IGRAPH d8df089 DNW- 1153 1328256 --
+E(For_SOJ_net1)$weight[1:10]
+
+# convert directed network to undirected network
+
+For_SOJ_net2<-as.undirected(For_SOJ_net1 ,mode = 'mutual',edge.attr.comb = "mean") # as a result, weight, p_value and width of edges are all averaged for mutual edges.
+For_SOJ_net2 # IGRAPH 70e2a01 UNW- 1153 664128 --
+E(For_SOJ_net2)$weight[1:10]
+E(For_SOJ_net2)$weight[1:10]
+E(For_SOJ_net2)$p_value[1:10]
+E(For_SOJ_net2)$width[1:10]
+
+
+## simplify the network from For_SOJ_net3
+
+#1)  remove non_significant edges with alpha=0.05
+
+summary(E(For_SOJ_net2)$p_value<0.05) #TRUE 49965 and FALSE 614163  
+For_SOJ_net3<-delete.edges(For_SOJ_net2,which(E(For_SOJ_net2)$p_value>=0.05))
+For_SOJ_net3 # IGRAPH 2b08bc9 UNW- 1153 49965 --
+summary(degree(For_SOJ_net3)==0) # all of the nodes has connection to others
+summary(E(For_SOJ_net3)$weight>0) # 25395 positive interactions, 24570 nagative interactions
+
+#2) remove non-significant edges with alpha=0.001
+
+summary(E(For_SOJ_net2)$p_value<0.001) # TRUE 4864, FALSE 659264
+For_SOJ_net4<-delete.edges(For_SOJ_net2,which(E(For_SOJ_net2)$p_value>=0.001))
+For_SOJ_net4 # IGRAPH d0ea61f UNW- 1153 4864 --
+For_SOJ_net4<-delete.vertices(For_SOJ_net4,degree(For_SOJ_net4)==0) # IGRAPH 0a9c827 UNW- 1139 4864 --
+
+#3) further simplify the network based on degree
+barplot(sort(degree(For_SOJ_net4)),main = "For_SOJ_net4_barplot")
+summary(degree(For_SOJ_net4)>20) # 34 nodes with degree larger than 20
+For_SOJ_net5<-delete.vertices(For_SOJ_net4,which(degree(For_SOJ_net4)<=20))
+For_SOJ_net5# IGRAPH 0c78c30 UNW- 34 58 --
+summary(E(For_SOJ_net5)$weight>0) # 25 positive and 33 negative
+
+# top 50
+
+For_SOJ_net6<-delete.vertices(For_SOJ_net4,labels(sort(degree(For_SOJ_net4),FALSE)[c(1:(length(V(For_SOJ_net4)$name)-50))]))
+For_SOJ_net6<-delete.vertices(For_SOJ_net6,degree(For_SOJ_net6)==0)#IGRAPH 577322c UNW- 46 101 --
+summary(E(For_SOJ_net6)$weight>0) # 46 positive and 55 negative
+
+# top100
+For_SOJ_net7<-delete.vertices(For_SOJ_net4,labels(sort(degree(For_SOJ_net4),FALSE)[c(1:(length(V(For_SOJ_net4)$name)-100))]))
+For_SOJ_net7<-delete.vertices(For_SOJ_net7,degree(For_SOJ_net7)==0) #IGRAPH 85ffdff UNW- 96 268 --
+summary(E(For_SOJ_net7)$weight>0) # 141 positive and 127 negative interactions
+```
+
+
+## Plot network
+
+```{r}
+
+tiff('/Users/fangliu/Documents/2016_cultivar_project/R_analysis/SparCC_3rd/For_SOJ_net4.tiff', units="in", width=10, height=8, res=300)
+plot(For_SOJ_net4,edge.arrow.size=0,edge.width=abs(E(For_SOJ_net4)$width/4),vertex.color=V(For_SOJ_net4)$vertex_color,vertex.frame.color="#555555",vertex.label=NA,edge.color=c("#ff8989","#9fe899")[1+(E(For_SOJ_net4)$weight>0)],vertex.size=degree(For_SOJ_net4)/10,layout=layout_with_fr (For_SOJ_net4),main="For_SOJ_net4") # green edges means positive correlation and red edges mean negative correlation
+dev.off()
+
+#plot(For_SOJ_net5,edge.arrow.size=0,edge.width=abs(E(For_SOJ_net5)$width/3),vertex.color=V(For_SOJ_net5)$vertex_color,vertex.frame.color="#555555",vertex.label=V(For_SOJ_net5)$label,edge.color=c("#ff8989","#9fe899")[1+(E(For_SOJ_net5)$weight>0)],vertex.label.cex=.8,vertex.size=degree(For_SOJ_net5)/1.5,layout=layout_with_dh (For_SOJ_net5),main="For_SOJ_net5")
+
+tiff('/Users/fangliu/Documents/2016_cultivar_project/R_analysis/SparCC_3rd/For_SOJ_net6.tiff', units="in", width=10, height=8, res=300)
+plot(For_SOJ_net6,edge.arrow.size=0,edge.width=abs(E(For_SOJ_net6)$width/3),vertex.color=V(For_SOJ_net6)$vertex_color,vertex.frame.color="#555555",vertex.label=V(For_SOJ_net6)$label,vertex.label.color="black",vertex.label.cex=.8,vertex.label.font=2,vertex.label.dist=0,edge.color=c("#ff8989","#9fe899")[1+(E(For_SOJ_net6)$weight>0)],vertex.size=degree(For_SOJ_net6)/1.5,layout=layout_with_dh (For_SOJ_net6),main="For_SOJ_net6")
+dev.off()
+
+tiff('/Users/fangliu/Documents/2016_cultivar_project/R_analysis/SparCC_3rd/For_SOJ_net7.tiff', units="in", width=10, height=8, res=300)
+plot(For_SOJ_net7,edge.arrow.size=0,edge.width=abs(E(For_SOJ_net7)$width/3),vertex.color=V(For_SOJ_net7)$vertex_color,vertex.frame.color="#555555",vertex.label=V(For_SOJ_net7)$label,vertex.label.color="black",vertex.label.cex=.8,vertex.label.font=2,vertex.label.dist=0,edge.color=c("#ff8989","#9fe899")[1+(E(For_SOJ_net7)$weight>0)],vertex.size=degree(For_SOJ_net7)/1.5,layout=layout_with_dh (For_SOJ_net7),main="For_SOJ_net7")
+dev.off()
+```
+
+-----------------------------------
+#        For_CV6 dataset
+-----------------------------------
+```{r}
+For_W82_phyloseq<-subset_samples(cultivar_phyloseq,Treat=="Forest_W82")
+For_W82_phyloseq
+sort(taxa_sums(For_W82_phyloseq),TRUE)[1100]
+For_W82_phyloseq<-filter_taxa(For_W82_phyloseq,function(x) sum(x)>=9,prune = TRUE)
+For_W82_phyloseq
+For_W82_OTU_SparCC<-data.frame(row.names(tax_table(For_W82_phyloseq)),otu_table(For_W82_phyloseq))
+#write.csv(For_W82_OTU_SparCC, file = "For_W82_OTU_SparCC.csv",row.names = TRUE)
+```
+
+
+## import SparCC and p_value matrix into R 
+
+```{r}
+# Read in SparCC correlation matrix
+For_W82_SparCC_cor<-read.csv("For_CV6_OTU_cor_sparcc.csv",header = TRUE,row.names = 1)
+For_W82_SparCC_cor<-as.matrix(For_W82_SparCC_cor)
+dim(For_W82_SparCC_cor)
+For_W82_SparCC_cor[1:5,1:5]
+
+# Read in corresponding p_value dataframe
+For_W82_SparCC_pvalue<-read.csv("For_CV6_OTU_two_sided_pvalue.csv",header = TRUE,row.names = 1)
+For_W82_SparCC_pvalue<-as.matrix(For_W82_SparCC_pvalue)
+dim(For_W82_SparCC_pvalue)
+For_W82_SparCC_pvalue[1:5,1:5]
+```
+
+
+## Generate vertices information and add relative abundance information to vertices and color information
+
+
+```{r}
+r_For_W82_phyloseq<-transform_sample_counts(For_W82_phyloseq,function(x) x/sum(x))
+
+For_W82_vertex<-data.frame(OtuID=taxa_names(r_For_W82_phyloseq),tax_table(r_For_W82_phyloseq),size=taxa_sums(r_For_W82_phyloseq)/length(sample_sums(r_For_W82_phyloseq))) # Here size are the average relative abundance of each OTU across all samples within same treatment
+dim(For_W82_vertex)
+For_W82_vertex[1:5,]
+For_W82_vertex<-For_W82_vertex[,c(1,3,7,8)]
+head(For_W82_vertex)
+levels<-factor(c("Bacteria_unclassified","Planctomycetes","Verrucomicrobia","Proteobacteria","Acidobacteria","Bacteroidetes","Actinobacteria","TM7","Gemmatimonadetes","Chlamydiae","Firmicutes","Chloroflexi","OD1", "Armatimonadetes","Nitrospira","BRC1","WS3","Tenericutes","Spirochaetes"))
+
+labels<-c('#9b9696','#ffee32','#f2701a','#b6cc0e','#ed5567','#07aeba','#3a44ff','#f936f6','#723434','#8ae2cc','#316022','#85f785','#be85f7','#990101','#b105fc','#fc05ba','#fc0505','#210000','#bc883a')
+
+#tiff ('Phylum_color_pie_plot.tiff', units="in", width=10, height=8, res=300)
+#pie(rep(1,19),col=labels,labels = levels,radius = 1.0)
+#dev.off()
+
+For_W82_vertex$color<-factor(For_W82_vertex$Phylum,levels = levels,labels=labels)
+dim(For_W82_vertex)
+For_W82_vertex[1:5,]
+
+For_W82_vertex<-join (For_W82_vertex,cultivar_meta,by="OtuID") # Originally, I used merge function, but it turned out to be problematic, because after merge it will The rows are by default lexicographically sorted on the common columns. To resulve this problem, I changed merge function to joint function.
+
+dim(For_W82_vertex)
+For_W82_vertex[1:5,]
+```
+
+
+## Creat links and have a look at edge and vertex information
+
+```{r}
+# read SparCC correlation matrix and p_value matrix to igraph
+For_W82_net<-graph_from_adjacency_matrix(For_W82_SparCC_cor,weighted = TRUE)
+For_W82_net  ## IGRAPH 37e1595 DNW- 1180 1392400 --
+summary(V(For_W82_net)$name==as.character(For_W82_vertex$OtuID)) 
+V(For_W82_net)$name[1:5]
+E(For_W82_net)$weight[1:5] # here the weight are just the SparCC coefficience
+
+# Add vertex information to the network
+V(For_W82_net)$vertex_color<-as.character(For_W82_vertex$color)
+V(For_W82_net)$size<-For_W82_vertex$size
+V(For_W82_net)$Phylum<-as.character(For_W82_vertex$Phylum)
+V(For_W82_net)$label<-as.character(For_W82_vertex$label)
+
+# Add edge information (p_value) to the network
+E(For_W82_net)$p_value<-For_W82_SparCC_pvalue
+E(For_W82_net)$p_value[1:10]
+
+## Add edge width to the network
+E(For_W82_net)$width<-E(For_W82_net)$weight*10
+E(For_W82_net)$width
+```
+
+
+------------------------------------------------------------------------------------------------------------------------------------------
+In order to simplify the network, including remove of loop and mutual edges. If using simplify function on Bulk_net, this will loose p_value and edge color information (which indicate if the interaction are negarive or positive)
+
+To solve this problem, I will write out the edge and vertices in dataframe format and read into these two dataframe and modify the edge information globally before use ``graph_from_data_frame`` to create network object.
+-----------------------------------------------------------------------------------------------------------------------------------------
+
+
+## write out edges and vertices in dataframe format, and edit on the network
+
+```{r}
+
+# -- generate edge dataframe from whole network---
+
+For_W82_edges<-as_data_frame(For_W82_net,what = "edges")
+dim(For_W82_edges) # 1392400 rows and 5 columns
+head(For_W82_edges)
+# Here the weight indicate the strength of interaction (SparCC value), p_value is the significance of interactions nad width is formulated based on weight * 40.
+
+# -- generate vertices dataframe from whole network---
+
+For_W82_vertices<-as_data_frame(For_W82_net,what = "vertices")
+dim(For_W82_vertices)
+head(For_W82_vertices)
+
+# remove edges that from and to the same nodes(selfloops)
+
+For_W82_edges<-For_W82_edges[which(For_W82_edges$from!=For_W82_edges$to),]
+dim(For_W82_edges) # 1391220 rows and 5 columns
+head(For_W82_edges)
+
+# Creat a new network using the above vertices and edge data frame
+For_W82_net1 <- graph_from_data_frame(d=For_W82_edges, vertices=For_W82_vertices, directed=T)#here if I used directed=FALSE, I will lost my p_value information as well as weight information. 
+For_W82_net1 # IGRAPH 245dfa3 DNW- 1180 1391220 --
+E(For_W82_net1)$weight[1:10]
+
+# convert directed network to undirected network
+
+For_W82_net2<-as.undirected(For_W82_net1 ,mode = 'mutual',edge.attr.comb = "mean") # as a result, weight, p_value and width of edges are all averaged for mutual edges.
+For_W82_net2 # IGRAPH e8964a6 UNW- 1180 695610 --
+E(For_W82_net2)$weight[1:10]
+E(For_W82_net2)$weight[1:10]
+E(For_W82_net2)$p_value[1:10]
+E(For_W82_net2)$width[1:10]
+
+
+## simplify the network from For_W82_net3
+
+#1)  remove non_significant edges with alpha=0.05
+
+summary(E(For_W82_net2)$p_value<0.05) #TRUE 50493 and FALSE 645117   
+
+For_W82_net3<-delete.edges(For_W82_net2,which(E(For_W82_net2)$p_value>=0.05))
+For_W82_net3 # IGRAPH 59b2444 UNW- 1180 50493 --
+summary(degree(For_W82_net3)==0) # all of the nodes has connection to others
+summary(E(For_W82_net3)$weight>0) # 25367 positive interactions, 25126 nagative interactions
+
+#2) remove non-significant edges with alpha=0.001
+
+summary(E(For_W82_net2)$p_value<0.001) # TRUE 4993, FALSE 690617
+For_W82_net4<-delete.edges(For_W82_net2,which(E(For_W82_net2)$p_value>=0.001))
+For_W82_net4 # IGRAPH 2d0ed47 UNW- 1180 4993 --
+For_W82_net4<-delete.vertices(For_W82_net4,degree(For_W82_net4)==0) # IGRAPH 1467202 UNW- 1163 4993 --
+
+#3) further simplify the network based on degree
+barplot(sort(degree(For_W82_net4)),main = "For_W82_net4_barplot")
+summary(degree(For_W82_net4)>20) # 31 nodes with degree larger than 20
+For_W82_net5<-delete.vertices(For_W82_net4,which(degree(For_W82_net4)<=20))
+For_W82_net5# IGRAPH 1807755 UNW- 31 38 --
+summary(E(For_W82_net5)$weight>0) # 30 positive and 8 negative
+
+# top 50
+
+For_W82_net6<-delete.vertices(For_W82_net4,labels(sort(degree(For_W82_net4),FALSE)[c(1:(length(V(For_W82_net4)$name)-50))]))
+For_W82_net6<-delete.vertices(For_W82_net6,degree(For_W82_net6)==0) #IGRAPH ce504e5 UNW- 45 66 --
+summary(E(For_W82_net6)$weight>0)
+
+# top100
+For_W82_net7<-delete.vertices(For_W82_net4,labels(sort(degree(For_W82_net4),FALSE)[c(1:(length(V(For_W82_net4)$name)-100))]))
+For_W82_net7<-delete.vertices(For_W82_net7,degree(For_W82_net7)==0) #IGRAPH b33aeb8 UNW- 98 242 --
+summary(E(For_W82_net7)$weight>0) # 178 positive and 64 negative
+```
+
+
+## Plot network
+
+```{r}
+
+tiff('/Users/fangliu/Documents/2016_cultivar_project/R_analysis/SparCC_3rd/For_W82_net4.tiff', units="in", width=10, height=8, res=300)
+plot(For_W82_net4,edge.arrow.size=0,edge.width=abs(E(For_W82_net4)$width/4),vertex.color=V(For_W82_net4)$vertex_color,vertex.frame.color="#555555",vertex.label=NA,edge.color=c("#ff8989","#9fe899")[1+(E(For_W82_net4)$weight>0)],vertex.size=degree(For_W82_net4)/10,layout=layout_with_fr (For_W82_net4),main="For_W82_net4") # green edges means positive correlation and red edges mean negative correlation
+dev.off()
+
+#plot(For_W82_net5,edge.arrow.size=0,edge.width=abs(E(For_W82_net5)$width/3),vertex.color=V(For_W82_net5)$vertex_color,vertex.frame.color="#555555",vertex.label=V(For_W82_net5)$label,edge.color=c("#ff8989","#9fe899")[1+(E(For_W82_net5)$weight>0)],vertex.label.cex=.8,vertex.size=degree(For_W82_net5)/1.5,layout=layout_with_dh (For_W82_net5),main="For_W82_net5")
+
+tiff('/Users/fangliu/Documents/2016_cultivar_project/R_analysis/SparCC_3rd/For_W82_net6.tiff', units="in", width=10, height=8, res=300)
+plot(For_W82_net6,edge.arrow.size=0,edge.width=abs(E(For_W82_net6)$width/3),vertex.color=V(For_W82_net6)$vertex_color,vertex.frame.color="#555555",vertex.label=V(For_W82_net6)$label,vertex.label.color="black",vertex.label.cex=.8,vertex.label.font=2,vertex.label.dist=0,edge.color=c("#ff8989","#9fe899")[1+(E(For_W82_net6)$weight>0)],vertex.size=degree(For_W82_net6)/1.5,layout=layout_with_dh (For_W82_net6),main="For_W82_net6")
+dev.off()
+
+tiff('/Users/fangliu/Documents/2016_cultivar_project/R_analysis/SparCC_3rd/For_W82_net7.tiff', units="in", width=10, height=8, res=300)
+plot(For_W82_net7,edge.arrow.size=0,edge.width=abs(E(For_W82_net7)$width/3),vertex.color=V(For_W82_net7)$vertex_color,vertex.frame.color="#555555",vertex.label=V(For_W82_net7)$label,vertex.label.color="black",vertex.label.cex=.8,vertex.label.font=2,vertex.label.dist=0,edge.color=c("#ff8989","#9fe899")[1+(E(For_W82_net7)$weight>0)],vertex.size=degree(For_W82_net7)/1.5,layout=layout_with_dh (For_W82_net7),main="For_W82_net7")
+dev.off()
+```
+
+
+
+
+## big_net4 plot
+
+
+```{r}
+color<-c('#9b9696','#ffee32','#b6cc0e','#ed5567','#07aeba','#3a44ff','#f936f6',
+         '#723434','#316022','#05fff2','#b105fc','#fc0505','#210000','#bc883a')
+pie(rep(1,14),col=color,radius = 1)
+E(Ag_soil_net4)$color<-'#9b9696'
+E(Ag_WIL_net4)$color<-'#ffee32'
+E(Ag_DRT_net4)$color<-'#b6cc0e'
+E(Ag_CNR_net4)$color<-'#ed5567'
+E(Ag_NNW_net4)$color<-'#07aeba'
+E(Ag_SOJ_net4)$color<-'#3a44ff'
+E(Ag_W82_net4)$color<-'#f936f6'
+E(For_soil_net4)$color<-'#723434'
+E(For_WIL_net4)$color<-'#316022'
+E(For_DRT_net4)$color<-'#05fff2'
+E(For_CNR_net4)$color<-'#b105fc'
+E(For_NNW_net4)$color<-'#fc0505'
+E(For_SOJ_net4)$color<-'#210000'
+E(For_W82_net4)$color<-'#bc883a'
+big_net4<-union(Ag_soil_net4,Ag_WIL_net4,Ag_DRT_net4,Ag_CNR_net4,Ag_NNW_net4,Ag_SOJ_net4,Ag_W82_net4,For_soil_net4,For_WIL_net4,For_DRT_net4,For_CNR_net4,For_NNW_net4,For_SOJ_net4,For_W82_net4,byname = TRUE)
+
+big_net4_edge_col<-data.frame(AgS_col=edge_attr(big_net4,"color_1"),Ag_CV1_col=edge_attr(big_net4,"color_2"),Ag_CV2_col=edge_attr(big_net4,"color_3"),Ag_CV3_col=edge_attr(big_net4,"color_4"),Ag_CV4_col=edge_attr(big_net4,"color_5"),Ag_CV5_col=edge_attr(big_net4,"color_6"),Ag_CV6_col=edge_attr(big_net4,"color_7"),For_soil_col=edge_attr(big_net4,"color_8"),For_CV1_col=edge_attr(big_net4,"color_9"),For_CV2_col=edge_attr(big_net4,"color_10"),For_CV3_col=edge_attr(big_net4,"color_11"),For_CV4_col=edge_attr(big_net4,"color_12"),For_CV5_col=edge_attr(big_net4,"color_13"),For_CV6_col=edge_attr(big_net4,"color_14"))
+#write.csv(big_net4_edge_col,file="big_net4_edge_col.csv")
+big_net4_edge_col2<-read.csv(file="big_net4_edge_col_edit.csv",header = TRUE,row.names = 1)
+head(big_net4_edge_col2)
+E(big_net4)$color<-as.character (big_net4_edge_col2$color)
+
+big_net4_vertex<-data.frame(OtuID=V(big_net4)$name,random=rep("whatever",3271))
+big_net4_vertex<-join(big_net4_vertex,cultivar_meta,by="OtuID")
+head(big_net4_vertex)
+summary(big_net4_vertex$Phylum)
+big_net4_vertex$color<-factor(big_net4_vertex$Phylum,levels = levels,labels = labels)
+head(big_net4_vertex)
+identical( as.factor(V(big_net4)$name),big_net4_vertex$OtuID)
+V(big_net4)$color<-as.character( big_net4_vertex$color)  
+V(big_net4)$name<-as.character(V(big_net4)$name)
+
+
+network_nodes_checkup<-read.csv("network_nodes_checkup.csv",header = TRUE)
+net4_degree_df<-data.frame(degree=sort(degree(big_net4),TRUE))
+dim(net4_degree_df)
+head(net4_degree_df)
+min(net4_degree_df)
+max(net4_degree_df)
+net4_degree_df<-data.frame(net4_degree_df,OTU=row.names(net4_degree_df))
+big_net4_degree_sorted_OTUs<-merge(net4_degree_df,network_nodes_checkup,by="OTU")
+big_net4_degree_sorted_OTUs<-big_net4_degree_sorted_OTUs[order(big_net4_degree_sorted_OTUs$degree,decreasing = TRUE),]
+big_net4_degree_sorted_OTUs$Genus[1:25]
+
+tiff ('bit_net4_fr_update.tiff', units="in", width=25, height=20, res=200)
+plot(big_net4,layout=layout_with_fr(big_net4),vertex.size=0.5,vertex.label=V(big_net4)$name,vertex.label.cex=.2,vertex.color=V(big_net4)$color,edge.color=E(big_net4)$color,edge.width=2)
+legend(x=-1.3,y=1,c("Ag_Soil","Ag_WIL","Ag_DRT","Ag_CNR","Ag_NNW","Ag_SOJ","Ag_W82","For_Soil","For_WIL","For_DRT","For_CNR","For_NNW","For_SOJ","For_W82"),lty=1,lwd = 2, col = c('#9b9696','#ffee32','#b6cc0e','#ed5567','#07aeba','#3a44ff','#f936f6',
+         '#723434','#316022','#05fff2','#b105fc','#fc0505','#210000','#bc883a'),text.col=c('#9b9696','#ffee32','#b6cc0e','#ed5567','#07aeba','#3a44ff','#f936f6',
+         '#723434','#316022','#05fff2','#b105fc','#fc0505','#210000','#bc883a'),pt.cex = 2,ncol = 2,cex = 2,bty = "n")
+
+legend(x=-1.3,y=-0.9,c("Bacteria_unclassified","Planctomycetes","Verrucomicrobia","Proteobacteria","Acidobacteria","Bacteroidetes","Actinobacteria","TM7","Gemmatimonadetes","Chlamydiae","Firmicutes","Chloroflexi","OD1", "Armatimonadetes","Nitrospira","BRC1","WS3","Tenericutes","Spirochaetes"),pch = 19, col = c('#9b9696','#ffee32','#f2701a','#b6cc0e','#ed5567','#07aeba','#3a44ff','#f936f6','#723434','#8ae2cc','#316022','#85f785','#be85f7','#990101','#b105fc','#fc05ba','#fc0505','#210000','#bc883a'),text.col=c('#9b9696','#ffee32','#f2701a','#b6cc0e','#ed5567','#07aeba','#3a44ff','#f936f6','#723434','#8ae2cc','#316022','#85f785','#be85f7','#990101','#b105fc','#fc05ba','#fc0505','#210000','#bc883a'),ncol = 5,cex = 2,bty = "o")
+
+dev.off()
+
+tiff ('bit_net4_fr_update2.tiff', units="in", width=25, height=20, res=300)
+plot(big_net4,layout=layout_with_fr(big_net4),vertex.size=degree(big_net4)/50,vertex.label=V(big_net4)$name,vertex.label.cex=.2,vertex.color=V(big_net4)$color,edge.color=E(big_net4)$color,edge.width=2)
+
+legend(x=-1.3,y=1,c("Ag_Soil","Ag_WIL","Ag_DRT","Ag_CNR","Ag_NNW","Ag_SOJ","Ag_W82","For_Soil","For_WIL","For_DRT","For_CNR","For_NNW","For_SOJ","For_W82"),lty=1,lwd = 2, col = c('#9b9696','#ffee32','#b6cc0e','#ed5567','#07aeba','#3a44ff','#f936f6',
+         '#723434','#316022','#05fff2','#b105fc','#fc0505','#210000','#bc883a'),text.col=c('#9b9696','#ffee32','#b6cc0e','#ed5567','#07aeba','#3a44ff','#f936f6',
+         '#723434','#316022','#05fff2','#b105fc','#fc0505','#210000','#bc883a'),pt.cex = 2,ncol = 2,cex = 2,bty = "n")
+
+legend(x=-1.3,y=-0.9,c("Bacteria_unclassified","Planctomycetes","Verrucomicrobia","Proteobacteria","Acidobacteria","Bacteroidetes","Actinobacteria","TM7","Gemmatimonadetes","Chlamydiae","Firmicutes","Chloroflexi","OD1", "Armatimonadetes","Nitrospira","BRC1","WS3","Tenericutes","Spirochaetes"),pch = 19, col = c('#9b9696','#ffee32','#f2701a','#b6cc0e','#ed5567','#07aeba','#3a44ff','#f936f6','#723434','#8ae2cc','#316022','#85f785','#be85f7','#990101','#b105fc','#fc05ba','#fc0505','#210000','#bc883a'),text.col=c('#9b9696','#ffee32','#f2701a','#b6cc0e','#ed5567','#07aeba','#3a44ff','#f936f6','#723434','#8ae2cc','#316022','#85f785','#be85f7','#990101','#b105fc','#fc05ba','#fc0505','#210000','#bc883a'),ncol = 5,cex = 2,bty = "o")
+dev.off()
+
+
+tiff ('bit_net4_in_circle.tiff', units="in", width=25, height=20, res=400)
+plot(big_net4,layout=layout_in_circle(big_net4),vertex.size=2,vertex.label=V(big_net4)$name,vertex.label.cex=.5,vertex.color=V(big_net4)$color,edge.color=E(big_net4)$color,edge.width=2)
+
+legend(x=-1.3,y=1,c("Ag_Soil","Ag_WIL","Ag_DRT","Ag_CNR","Ag_NNW","Ag_SOJ","Ag_W82","For_Soil","For_WIL","For_DRT","For_CNR","For_NNW","For_SOJ","For_W82"),lty=1,lwd = 2, col = c('#9b9696','#ffee32','#b6cc0e','#ed5567','#07aeba','#3a44ff','#f936f6',
+         '#723434','#316022','#05fff2','#b105fc','#fc0505','#210000','#bc883a'),text.col=c('#9b9696','#ffee32','#b6cc0e','#ed5567','#07aeba','#3a44ff','#f936f6',
+         '#723434','#316022','#05fff2','#b105fc','#fc0505','#210000','#bc883a'),pt.cex = 2,ncol = 2,cex = 2,bty = "n")
+
+legend(x=-1.3,y=-0.9,c("Bacteria_unclassified","Planctomycetes","Verrucomicrobia","Proteobacteria","Acidobacteria","Bacteroidetes","Actinobacteria","TM7","Gemmatimonadetes","Chlamydiae","Firmicutes","Chloroflexi","OD1", "Armatimonadetes","Nitrospira","BRC1","WS3","Tenericutes","Spirochaetes"),pch = 19, col = c('#9b9696','#ffee32','#f2701a','#b6cc0e','#ed5567','#07aeba','#3a44ff','#f936f6','#723434','#8ae2cc','#316022','#85f785','#be85f7','#990101','#b105fc','#fc05ba','#fc0505','#210000','#bc883a'),text.col=c('#9b9696','#ffee32','#f2701a','#b6cc0e','#ed5567','#07aeba','#3a44ff','#f936f6','#723434','#8ae2cc','#316022','#85f785','#be85f7','#990101','#b105fc','#fc05ba','#fc0505','#210000','#bc883a'),ncol = 5,cex = 2,bty = "o")
+
+dev.off()
+
+big_net4_simp<-delete.vertices(big_net4,degree(big_net4)<100)
+
+tiff ('bit_net4_simp_fr.tiff', units="in", width=25, height=20, res=400)
+plot(big_net4_simp,layout=layout_with_fr(big_net4_simp),vertex.size=2,vertex.label=V(big_net4_simp)$name,vertex.label.cex=.5,vertex.color=V(big_net4_simp)$color,edge.color=E(big_net4_simp)$color,edge.width=2)
+
+legend(x=-1.3,y=1,c("Ag_Soil","Ag_WIL","Ag_DRT","Ag_CNR","Ag_NNW","Ag_SOJ","Ag_W82","For_Soil","For_WIL","For_DRT","For_CNR","For_NNW","For_SOJ","For_W82"),lty=1,lwd = 2, col = c('#9b9696','#ffee32','#b6cc0e','#ed5567','#07aeba','#3a44ff','#f936f6',
+         '#723434','#316022','#05fff2','#b105fc','#fc0505','#210000','#bc883a'),text.col=c('#9b9696','#ffee32','#b6cc0e','#ed5567','#07aeba','#3a44ff','#f936f6',
+         '#723434','#316022','#05fff2','#b105fc','#fc0505','#210000','#bc883a'),pt.cex = 2,ncol = 2,cex = 2,bty = "n")
+
+legend(x=-1.3,y=-0.9,c("Bacteria_unclassified","Planctomycetes","Verrucomicrobia","Proteobacteria","Acidobacteria","Bacteroidetes","Actinobacteria","TM7","Gemmatimonadetes","Chlamydiae","Firmicutes","Chloroflexi","OD1", "Armatimonadetes","Nitrospira","BRC1","WS3","Tenericutes","Spirochaetes"),pch = 19, col = c('#9b9696','#ffee32','#f2701a','#b6cc0e','#ed5567','#07aeba','#3a44ff','#f936f6','#723434','#8ae2cc','#316022','#85f785','#be85f7','#990101','#b105fc','#fc05ba','#fc0505','#210000','#bc883a'),text.col=c('#9b9696','#ffee32','#f2701a','#b6cc0e','#ed5567','#07aeba','#3a44ff','#f936f6','#723434','#8ae2cc','#316022','#85f785','#be85f7','#990101','#b105fc','#fc05ba','#fc0505','#210000','#bc883a'),ncol = 5,cex = 2,bty = "o")
+
+dev.off()
+```
+
+
+## Calculate the correlation between connection degreee and node abundance based on net4
+
+```{r}
+net4_nodes_degree<-degree(big_net4)
+labels(net4_nodes_degree)
+cultivar_phyloseq
+r_cultivar_phyloseq<-transform_sample_counts(cultivar_phyloseq,function(x) x/sum(x)) 
+r_net4_sub_cultivar_phyloseq<-prune_taxa(labels(net4_nodes_degree),r_cultivar_phyloseq)
+r_net4_sub_node_size<-taxa_sums(r_net4_sub_cultivar_phyloseq)/136
+r_net4_sub_node_size<-r_net4_sub_node_size[match(labels(net4_nodes_degree),labels(r_net4_sub_node_size))]
+identical(labels(net4_nodes_degree),labels(r_net4_sub_node_size))
+
+net4_lm<-lm(net4_nodes_degree~r_net4_sub_node_size)
+summary(net4_lm)
+
+#Coefficients:
+#                      Estimate Std. Error t value Pr(>|t|)    
+#(Intercept)          4.543e+01  6.622e-01   68.60   <2e-16 ***
+#r_net4_sub_node_size 1.315e+04  6.428e+02   20.45   <2e-16 ***
+
+net4_df<-data.frame(net4_degree=net4_nodes_degree,net4_node_size=r_net4_sub_node_size)
+dim(net4_df) # 3271 rows and 2 column
+head(net4_df)
+library(ggplot2)
+ 
+tiff('Correlation between node abundance and node connectiveness based on net4.tiff', units="in", width=8, height=6, res=300)
+ggplot(net4_df,aes(net4_degree,net4_node_size,label=rownames(net4_df)))+geom_point()+geom_text(family="Arial",size=3 )+annotate( geom="text",x=40,y=0.025,label="Y = 45.43 + 13150 X \n Adj R^2 = 0.11, p = 2.2*e-16",family="Arial",size=3 )+geom_smooth(method = "lm",se=FALSE,color="black",size=0.5)+ggtitle("\n Correlation between node abundance \n and node connectiveness \n based on net4")+xlab("Node degree")+ylab("OTU abundance")+ theme(panel.background = element_rect(fill='white',color="black"),panel.grid.major = element_blank(),panel.grid.minor = element_blank(),text=element_text(family="Arial",face="bold"), plot.title = element_text(family='Arial', hjust = .5,vjust = 3,size = 24,face="bold"), axis.text.x = element_text(family="Arial",size=12),axis.text.y = element_text(family="Arial",size=12),axis.title.x = element_text(family="Arial",size=18,face="bold"),axis.title.y = element_text(family="Arial",size=18,face="bold"))
+dev.off()
+```
+
+
+## Network topological characteristics based on net4 (all significant interactions at alpha<0.01 )
+
+
+```{r}
+
+## >>>>> Ag_soil
+Ag_soil_net4_ratio<-length(which(E(Ag_soil_net4)$weight>0))/(length(E(Ag_soil_net4)$weight)) # 54.64%
+Ag_soil_net4_density<-edge_density(Ag_soil_net4,loops = F) # 2.35%
+Ag_soil_net4_degree<-sum(degree(Ag_soil_net4,mode="all"))/length(V(Ag_soil_net4)$name) #25.68
+Ag_soil_net4_betweeness<-sum(sort(betweenness(Ag_soil_net4,directed = FALSE,weight=abs(E(Ag_soil_net4)$weight))))/length(V(Ag_soil_net4)$name) #1092.03
+Ag_soil_net4_closeness<-sum(closeness(Ag_soil_net4,mode = "all",weights = abs(E(Ag_soil_net4)$weight)))/50 # 0.015
+Ag_soil_net4_modularity<-modularity(Ag_soil_net4,weights = abs(E(Ag_soil_net4)$weight),membership(cluster_walktrap(Ag_soil_net4,weight=abs(E(Ag_soil_net4)$weight),steps=4,modularity=TRUE))) #0.27
+Ag_soil_net4_distance<-mean_distance(Ag_soil_net4,directed = FALSE) #2.99
+
+## >>>>. Ag_WIL
+Ag_WIL_net4_ratio<-length(which(E(Ag_WIL_net4)$weight>0))/(length(E(Ag_WIL_net4)$weight)) # 56.69
+Ag_WIL_net4_density<-edge_density(Ag_WIL_net4,loops = F) #1.58%
+Ag_WIL_net4_degree<-sum(degree(Ag_WIL_net4,mode="all"))/length(V(Ag_WIL_net4)$name) #16.83
+Ag_WIL_net4_betweeness<-sum(sort(betweenness(Ag_WIL_net4,directed = FALSE,weight=abs(E(Ag_WIL_net4)$weight))))/length(V(Ag_WIL_net4)$name) # 1294.407
+Ag_WIL_net4_closeness<-sum(closeness(Ag_WIL_net4,mode = "all",weights = abs(E(Ag_WIL_net4)$weight)))/length(V(Ag_WIL_net4)$name) #0.0002433666
+Ag_WIL_net4_modularity<-modularity(Ag_WIL_net4,weights = abs(E(Ag_WIL_net4)$weight),membership(cluster_walktrap(Ag_WIL_net4,weight=abs(E(Ag_WIL_net4)$weight),steps=4,modularity=TRUE))) #0.3034561
+Ag_WIL_net4_distance<-mean_distance(Ag_WIL_net4,directed = FALSE) # 3.427977
+
+## >>>>> Ag_DRT
+Ag_DRT_net4_ratio<-length(which(E(Ag_DRT_net4)$weight>0))/(length(E(Ag_DRT_net4)$weight)) #58.74%
+Ag_DRT_net4_density<-edge_density(Ag_DRT_net4,loops = F) # 0.7571289%
+Ag_DRT_net4_degree<-sum(degree(Ag_DRT_net4,mode="all"))/length(V(Ag_DRT_net4)$name) #8.464701
+Ag_DRT_net4_betweeness<-sum(sort(betweenness(Ag_DRT_net4,directed = FALSE,weight=abs(E(Ag_DRT_net4)$weight))))/length(V(Ag_DRT_net4)$name) #1588.347
+Ag_DRT_net4_modularity<-modularity(Ag_DRT_net4,weights = abs(E(Ag_DRT_net4)$weight),membership(cluster_walktrap(Ag_DRT_net4,weight=abs(E(Ag_DRT_net4)$weight),steps=4,modularity=TRUE))) #0.4548704
+Ag_DRT_net4_distance<-mean_distance(Ag_DRT_net4,directed = FALSE) # 3.813341
+
+## >>>>> Ag_CNR
+Ag_CNR_net4_ratio<-length(which(E(Ag_CNR_net4)$weight>0))/(length(E(Ag_CNR_net4)$weight)) # 57.33%
+Ag_CNR_net4_density<-edge_density(Ag_CNR_net4,loops = F) # 0.81%
+Ag_CNR_net4_degree<-sum(degree(Ag_CNR_net4,mode="all"))/length(V(Ag_CNR_net4)$name)  #8.929476
+Ag_CNR_net4_betweeness<-sum(sort(betweenness(Ag_CNR_net4,directed = FALSE,weight=abs(E(Ag_CNR_net4)$weight))))/length(V(Ag_CNR_net4)$name) #1576.233
+Ag_CNR_net4_closeness<-sum(closeness(Ag_CNR_net4,mode = "all",weights = abs(E(Ag_CNR_net4)$weight)))/length(V(Ag_CNR_net4)$name) # 0.0004316685
+Ag_CNR_net4_modularity<-modularity(Ag_CNR_net4,weights = abs(E(Ag_CNR_net4)$weight),membership(cluster_walktrap(Ag_CNR_net4,weight=abs(E(Ag_CNR_net4)$weight),steps=4,modularity=TRUE))) #0.473579
+Ag_CNR_net4_distance<-mean_distance(Ag_CNR_net4,directed = FALSE) # # 3.812565
+
+## >>>>> Ag_NNW
+Ag_NNW_net4_ratio<-length(which(E(Ag_NNW_net4)$weight>0))/(length(E(Ag_NNW_net4)$weight))# 57.68%
+Ag_NNW_net4_density<-edge_density(Ag_NNW_net4,loops = F) #0.6418%
+Ag_NNW_net4_degree<-sum(degree(Ag_NNW_net4,mode="all"))/length(V(Ag_NNW_net4)$name) #6.97
+Ag_NNW_net4_betweeness<-sum(sort(betweenness(Ag_NNW_net4,directed = FALSE,weight=abs(E(Ag_NNW_net4)$weight))))/length(V(Ag_NNW_net4)$name) # 1691.401
+Ag_NNW_net4_closeness<-sum(closeness(Ag_NNW_net4,mode = "all",weights = abs(E(Ag_NNW_net4)$weight)))/length(V(Ag_NNW_net4)$name) #0.0004209084
+Ag_NNW_net4_modularity<-modularity(Ag_NNW_net4,weights = abs(E(Ag_NNW_net4)$weight),membership(cluster_walktrap(Ag_NNW_net4,weight=abs(E(Ag_NNW_net4)$weight),steps=4,modularity=TRUE))) #0.4766828
+Ag_NNW_net4_distance<-mean_distance(Ag_NNW_net4,directed = FALSE) # 4.082971
+
+## >>>>. Ag_SOJ
+Ag_SOJ_net4_ratio<-length(which(E(Ag_SOJ_net4)$weight>0))/(length(E(Ag_SOJ_net4)$weight))# 55.91%
+Ag_SOJ_net4_density<-edge_density(Ag_SOJ_net4,loops = F) # 0.9254662%
+Ag_SOJ_net4_degree<-sum(degree(Ag_SOJ_net4,mode="all"))/length(V(Ag_SOJ_net4)$name) # 9.319444
+Ag_SOJ_net4_betweeness<-sum(sort(betweenness(Ag_SOJ_net4,directed = FALSE,weight=abs(E(Ag_SOJ_net4)$weight))))/length(V(Ag_SOJ_net4)$name) # 1471.818
+Ag_SOJ_net4_closeness<-sum(closeness(Ag_SOJ_net4,mode = "all",weights = abs(E(Ag_SOJ_net4)$weight)))/length(V(Ag_SOJ_net4)$name) # 0.0002231377
+Ag_SOJ_net4_modularity<-modularity(Ag_SOJ_net4,weights = abs(E(Ag_SOJ_net4)$weight),membership(cluster_walktrap(Ag_SOJ_net4,weight=abs(E(Ag_SOJ_net4)$weight),steps=4,modularity=TRUE))) #0.4901065
+Ag_SOJ_net4_distance<-mean_distance(Ag_SOJ_net4,directed = FALSE) # 3.919589
+
+## >>>>> Ag_W82
+Ag_W82_net4_ratio<-length(which(E(Ag_W82_net4)$weight>0))/(length(E(Ag_W82_net4)$weight)) # 57.77%
+Ag_W82_net4_density<-edge_density(Ag_W82_net4,loops = F) # 0.7305327%
+Ag_W82_net4_degree<-sum(degree(Ag_W82_net4,mode="all"))/length(V(Ag_W82_net4)$name) #6.114558
+Ag_W82_net4_betweeness<-sum(sort(betweenness(Ag_W82_net4,directed = FALSE,weight=abs(E(Ag_W82_net4)$weight))))/length(V(Ag_W82_net4)$name) # 1405.331
+Ag_W82_net4_closeness<-sum(closeness(Ag_W82_net4,mode = "all",weights = abs(E(Ag_W82_net4)$weight)))/length(V(Ag_W82_net4)$name) # 0.0004903712
+Ag_W82_net4_modularity<-modularity(Ag_W82_net4,weights = abs(E(Ag_W82_net4)$weight),membership(cluster_walktrap(Ag_W82_net4,weight=abs(E(Ag_W82_net4)$weight),steps=4,modularity=TRUE))) #0.5282513
+Ag_W82_net4_distance<-mean_distance(Ag_W82_net4,directed = FALSE) #4.314292
+
+## >>>>. AG_W82_up
+Ag_W82_up_net4_ratio<-length(which(E(Ag_W82_up_net4)$weight>0))/(length(E(Ag_W82_up_net4)$weight)) # 0.5766481
+Ag_W82_up_net4_density<-edge_density(Ag_W82_up_net4,loops = F) # 0.66%
+Ag_W82_up_net4_degree<-sum(degree(Ag_W82_up_net4,mode="all"))/length(V(Ag_W82_up_net4)$name) #7.05
+Ag_W82_up_net4_betweeness<-sum(sort(betweenness(Ag_W82_up_net4,directed = FALSE,weight=abs(E(Ag_W82_up_net4)$weight))))/length(V(Ag_W82_up_net4)$name) # 1694.558
+Ag_W82_up_net4_closeness<-sum(closeness(Ag_W82_up_net4,mode = "all",weights = abs(E(Ag_W82_up_net4)$weight)))/length(V(Ag_W82_up_net4)$name) # 0.0002155148
+Ag_W82_up_net4_modularity<-modularity(Ag_W82_up_net4,weights = abs(E(Ag_W82_up_net4)$weight),membership(cluster_walktrap(Ag_W82_up_net4,weight=abs(E(Ag_W82_up_net4)$weight),steps=4,modularity=TRUE))) #0.4932905
+Ag_W82_up_net4_distance<-mean_distance(Ag_W82_up_net4,directed = FALSE) #4.137422
+
+
+## >>>>>> For_Soil
+For_soil_net4_ratio<-length(which(E(For_soil_net4)$weight>0))/(length(E(For_soil_net4)$weight)) # 56.25%
+For_soil_net4_density<-edge_density(For_soil_net4,loops = F) # 1.49%
+For_soil_net4_degree<-sum(degree(For_soil_net4,mode="all"))/length(V(For_soil_net4)$name) #16.77
+For_soil_net4_betweeness<-sum(sort(betweenness(For_soil_net4,directed = FALSE,weight=abs(E(For_soil_net4)$weight))))/length(V(For_soil_net4)$name) # 1273.30
+For_soil_net4_closeness<-sum(closeness(For_soil_net4,mode = "all",weights = abs(E(For_soil_net4)$weight)))/length(V(For_soil_net4)$name)# 0.0006603711
+For_soil_net4_modularity<-modularity(For_soil_net4,weights = abs(E(For_soil_net4)$weight),membership(cluster_walktrap(For_soil_net4,weight=abs(E(For_soil_net4)$weight),steps=4,modularity=TRUE))) #0.295
+For_soil_net4_distance<-mean_distance(For_soil_net4,directed = FALSE) # 3.24
+
+## >>>>>. For_WIL
+For_WIL_net4_ratio<-length(which(E(For_WIL_net4)$weight>0))/(length(E(For_WIL_net4)$weight)) # 55.68%
+For_WIL_net4_density<-edge_density(For_WIL_net4,loops = F) #  0.88%
+For_WIL_net4_degree<-sum(degree(For_WIL_net4,mode="all"))/length(V(For_WIL_net4)$name) #9.752931
+For_WIL_net4_betweeness<-sum(sort(betweenness(For_WIL_net4,directed = FALSE,weight=abs(E(For_WIL_net4)$weight))))/length(V(For_WIL_net4)$name) #1541.857
+For_WIL_net4_closeness<-sum(closeness(For_WIL_net4,mode = "all",weights = abs(E(For_WIL_net4)$weight)))/length(V(For_WIL_net4)$name) # 0.0002308452
+For_WIL_net4_modularity<-modularity(For_WIL_net4,weights = abs(E(For_WIL_net4)$weight),membership(cluster_walktrap(For_WIL_net4,weight=abs(E(For_WIL_net4)$weight),steps=4,modularity=TRUE))) #0.3887536
+For_WIL_net4_distance<-mean_distance(For_WIL_net4,directed = FALSE) # 3.75068
+
+## >>>> For_DRT
+
+For_DRT_net4_ratio<-length(which(E(For_DRT_net4)$weight>0))/(length(E(For_DRT_net4)$weight)) # 56.21%
+For_DRT_net4_density<-edge_density(For_DRT_net4,loops = F) # 0.73%
+For_DRT_net4_degree<-sum(degree(For_DRT_net4,mode="all"))/length(V(For_DRT_net4)$name) #8.38
+For_DRT_net4_betweeness<-sum(sort(betweenness(For_DRT_net4,directed = FALSE,weight=abs(E(For_DRT_net4)$weight))))/length(V(For_DRT_net4)$name) #1653.03
+For_DRT_net4_closeness<-sum(closeness(For_DRT_net4,mode = "all",weights = abs(E(For_DRT_net4)$weight)))/length(V(For_DRT_net4)$name) # 0.0004268178
+For_DRT_net4_modularity<-modularity(For_DRT_net4,weights = abs(E(For_DRT_net4)$weight),membership(cluster_walktrap(For_DRT_net4,weight=abs(E(For_DRT_net4)$weight),steps=4,modularity=TRUE))) #0.4525556
+For_DRT_net4_distance<-mean_distance(For_DRT_net4,directed = FALSE) #3.864411
+
+## >>>>>> For_CNR
+For_CNR_net4_ratio<-length(which(E(For_CNR_net4)$weight>0))/(length(E(For_CNR_net4)$weight)) #55.42%
+For_CNR_net4_density<-edge_density(For_CNR_net4,loops = F) # 0.68%
+For_CNR_net4_degree<-sum(degree(For_CNR_net4,mode="all"))/length(V(For_CNR_net4)$name) #7.43
+For_CNR_net4_betweeness<-sum(sort(betweenness(For_CNR_net4,directed = FALSE,weight=abs(E(For_CNR_net4)$weight))))/length(V(For_CNR_net4)$name) #1626.60
+For_CNR_net4_closeness<-sum(closeness(For_CNR_net4,mode = "all",weights = abs(E(For_CNR_net4)$weight)))/length(V(For_CNR_net4)$name) #0.0002290176
+For_CNR_net4_modularity<-modularity(For_CNR_net4,weights = abs(E(For_CNR_net4)$weight),membership(cluster_walktrap(For_CNR_net4,weight=abs(E(For_CNR_net4)$weight),steps=4,modularity=TRUE))) #0.4495486
+For_CNR_net4_distance<-mean_distance(For_CNR_net4,directed = FALSE) #3.945361
+
+## >>>>> For_NNW
+
+For_NNW_net4_ratio<-length(which(E(For_NNW_net4)$weight>0))/(length(E(For_NNW_net4)$weight))# 57.60%
+For_NNW_net4_density<-edge_density(For_NNW_net4,loops = F) #0.77%
+For_NNW_net4_degree<-sum(degree(For_NNW_net4,mode="all"))/length(V(For_NNW_net4)$name) #8.75
+For_NNW_net4_betweeness<-sum(sort(betweenness(For_NNW_net4,directed = FALSE,weight=abs(E(For_NNW_net4)$weight))))/length(V(For_NNW_net4)$name) # 1611.71
+For_NNW_net4_closeness<-sum(closeness(For_NNW_net4,mode = "all",weights = abs(E(For_NNW_net4)$weight)))/length(V(For_NNW_net4)$name) # 0.0004595546
+For_NNW_net4_modularity<-modularity(For_NNW_net4,weights = abs(E(For_NNW_net4)$weight),membership(cluster_walktrap(For_NNW_net4,weight=abs(E(For_NNW_net4)$weight),steps=4,modularity=TRUE))) #0.4323
+For_NNW_net4_distance<-mean_distance(For_NNW_net4,directed = FALSE) # 3.79
+
+
+## >>>> For_SOJ
+
+For_SOJ_net4_ratio<-length(which(E(For_SOJ_net4)$weight>0))/(length(E(For_SOJ_net4)$weight))# 54.81%
+For_SOJ_net4_density<-edge_density(For_SOJ_net4,loops = F) # 0.75%
+For_SOJ_net4_degree<-sum(degree(For_SOJ_net4,mode="all"))/length(V(For_SOJ_net4)$name) # 8.54
+For_SOJ_net4_betweeness<-sum(sort(betweenness(For_SOJ_net4,directed = FALSE,weight=abs(E(For_SOJ_net4)$weight))))/length(V(For_SOJ_net4)$name) # 1589.82
+For_SOJ_net4_closeness<-sum(closeness(For_SOJ_net4,mode = "all",weights = abs(E(For_SOJ_net4)$weight)))/length(V(For_SOJ_net4)$name) # 0.00017383
+For_SOJ_net4_modularity<-modularity(For_SOJ_net4,weights = abs(E(For_SOJ_net4)$weight),membership(cluster_walktrap(For_SOJ_net4,weight=abs(E(For_SOJ_net4)$weight),steps=4,modularity=TRUE))) # 0.4593626
+For_SOJ_net4_distance<-mean_distance(For_SOJ_net4,directed = FALSE) # 3.778629
+
+## >>> For_W82
+For_W82_net4_ratio<-length(which(E(For_W82_net4)$weight>0))/(length(E(For_W82_net4)$weight)) # 55.70%
+For_W82_net4_density<-edge_density(For_W82_net4,loops = F) # 0.74%
+For_W82_net4_degree<-sum(degree(For_W82_net4,mode="all"))/length(V(For_W82_net4)$name) #8.59
+For_W82_net4_betweeness<-sum(sort(betweenness(For_W82_net4,directed = FALSE,weight=abs(E(For_W82_net4)$weight))))/length(V(For_W82_net4)$name) # 1626.15
+For_W82_net4_closeness<-sum(closeness(For_W82_net4,mode = "all",weights = abs(E(For_W82_net4)$weight)))/length(V(For_W82_net4)$name) # 0.0004369
+For_W82_net4_modularity<-modularity(For_W82_net4,weights = abs(E(For_W82_net4)$weight),membership(cluster_walktrap(For_W82_net4,weight=abs(E(For_W82_net4)$weight),steps=4,modularity=TRUE))) #0.4646
+For_W82_net4_distance<-mean_distance(For_W82_net4,directed = FALSE) # 3.766723
+
+```
+
+
+
+
+## big_net6
+
+```{r}
+color<-c('#9b9696','#ffee32','#b6cc0e','#ed5567','#07aeba','#3a44ff','#f936f6',
+         '#723434','#316022','#05fff2','#b105fc','#fc0505','#210000','#bc883a')
+pie(rep(1,14),col=color,radius = 1)
+E(Ag_soil_net6)$color<-'#9b9696'
+E(Ag_WIL_net6)$color<-'#ffee32'
+E(Ag_DRT_net6)$color<-'#b6cc0e'
+E(Ag_CNR_net6)$color<-'#ed5567'
+E(Ag_NNW_net6)$color<-'#07aeba'
+E(Ag_SOJ_net6)$color<-'#3a44ff'
+E(Ag_W82_net6)$color<-'#f936f6'
+E(For_soil_net6)$color<-'#723434'
+E(For_WIL_net6)$color<-'#316022'
+E(For_DRT_net6)$color<-'#05fff2'
+E(For_CNR_net6)$color<-'#b105fc'
+E(For_NNW_net6)$color<-'#fc0505'
+E(For_SOJ_net6)$color<-'#210000'
+E(For_W82_net6)$color<-'#bc883a'
+big_net6<-union(Ag_soil_net6,Ag_WIL_net6,Ag_DRT_net6,Ag_CNR_net6,Ag_NNW_net6,Ag_SOJ_net6,Ag_W82_net6,For_soil_net6,For_WIL_net6,For_DRT_net6,For_CNR_net6,For_NNW_net6,For_SOJ_net6,For_W82_net6,byname = TRUE)
+
+#big_net6_edge_col<-data.frame(AgS_col=edge_attr(big_net6,"color_1"),Ag_CV1_col=edge_attr(big_net6,"color_2"),Ag_CV2_col=edge_attr(big_net6,"color_3"),Ag_CV3_col=edge_attr(big_net6,"color_4"),Ag_CV4_col=edge_attr(big_net6,"color_5"),Ag_CV5_col=edge_attr(big_net6,"color_6"),Ag_CV6_col=edge_attr(big_net6,"color_7"),For_soil_col=edge_attr(big_net6,"color_8"),For_CV1_col=edge_attr(big_net6,"color_9"),For_CV2_col=edge_attr(big_net6,"color_10"),For_CV3_col=edge_attr(big_net6,"color_11"),For_CV4_col=edge_attr(big_net6,"color_12"),For_CV5_col=edge_attr(big_net6,"color_13"),For_CV6_col=edge_attr(big_net6,"color_14"))
+#write.csv(big_net6_edge_col,file="big_net6_edge_col.csv")
+big_net6_edge_col2<-read.csv(file="big_net6_edge_col_edit.csv",header = TRUE,row.names = 1)
+head(big_net6_edge_col2)
+E(big_net6)$color<-as.character (big_net6_edge_col2$color)
+
+big_net6_vertex<-data.frame(OtuID=V(big_net6)$name,random=rep("whatever",566))
+big_net6_vertex<-join(big_net6_vertex,cultivar_meta,by="OtuID")
+head(big_net6_vertex)
+summary(big_net6_vertex$Phylum)
+sort(summary(big_net6_vertex$Phylum),decreasing = TRUE)
+big_net6_vertex$color<-factor(big_net6_vertex$Phylum,levels = levels,labels = labels)
+head(big_net6_vertex)
+identical( as.factor(V(big_net6)$name),big_net6_vertex$OtuID)
+V(big_net6)$color<-as.character( big_net6_vertex$color)  
+V(big_net6)$name<-as.character(V(big_net6)$name)
+
+
+network_nodes_checkup<-read.csv("network_nodes_checkup.csv",header = TRUE)
+net6_degree_df<-data.frame(degree=sort(degree(big_net6),TRUE))
+net6_degree_df<-data.frame(net6_degree_df,OTU=row.names(net6_degree_df))
+big_net6_degree_sorted_OTUs<-merge(net6_degree_df,network_nodes_checkup,by="OTU")
+big_net6_degree_sorted_OTUs<-big_net6_degree_sorted_OTUs[order(big_net6_degree_sorted_OTUs$degree,decreasing = TRUE),]
+big_net6_degree_sorted_OTUs$Genus[1:25]
+
+tiff ('big_net6_fr.tiff', units="in", width=25, height=23, res=300)
+plot(big_net6,layout=layout_with_fr(big_net6),vertex.size=2,vertex.label=V(big_net6)$name,vertex.label.cex=.5,vertex.color=V(big_net6)$color,edge.color=E(big_net6)$color,edge.width=2)
+legend(x=-1.3,y=1,c("Ag_Soil","Ag_WIL","Ag_DRT","Ag_CNR","Ag_NNW","Ag_SOJ","Ag_W82","For_Soil","For_WIL","For_DRT","For_CNR","For_NNW","For_SOJ","For_W82"),lty=1,lwd = 4, col = c('#9b9696','#ffee32','#b6cc0e','#ed5567','#07aeba','#3a44ff','#f936f6',
+         '#723434','#316022','#05fff2','#b105fc','#fc0505','#210000','#bc883a'),text.col=c('#9b9696','#ffee32','#b6cc0e','#ed5567','#07aeba','#3a44ff','#f936f6',
+         '#723434','#316022','#05fff2','#b105fc','#fc0505','#210000','#bc883a'),pt.cex = 2,ncol = 2,cex = 2,bty = "n")
+
+legend(x=-1.0,y=-0.95,c("Bacteria_unclassified","Planctomycetes","Verrucomicrobia","Proteobacteria","Acidobacteria","Bacteroidetes","Actinobacteria","TM7","Gemmatimonadetes","Chlamydiae","Firmicutes","Chloroflexi","OD1", "Armatimonadetes","Nitrospira","BRC1","WS3","Tenericutes","Spirochaetes"),pch = 19, col = c('#9b9696','#ffee32','#f2701a','#b6cc0e','#ed5567','#07aeba','#3a44ff','#f936f6','#723434','#8ae2cc','#316022','#85f785','#be85f7','#990101','#b105fc','#fc05ba','#fc0505','#210000','#bc883a'),text.col=c('#9b9696','#ffee32','#f2701a','#b6cc0e','#ed5567','#07aeba','#3a44ff','#f936f6','#723434','#8ae2cc','#316022','#85f785','#be85f7','#990101','#b105fc','#fc05ba','#fc0505','#210000','#bc883a'),ncol = 5,cex = 2,bty = "o")
+
+dev.off()
+
+
+tiff ('big_net6_fr_update_node_size.tiff', units="in", width=25, height=20, res=200)
+plot(big_net6,layout=layout_with_fr(big_net6),vertex.size=degree(big_net6)/8,vertex.label=V(big_net6)$name,vertex.label.cex=.5,vertex.color=V(big_net6)$color,edge.color=E(big_net6)$color,edge.width=2)
+legend(x=-1.3,y=1,c("Ag_Soil","Ag_WIL","Ag_DRT","Ag_CNR","Ag_NNW","Ag_SOJ","Ag_W82","For_Soil","For_WIL","For_DRT","For_CNR","For_NNW","For_SOJ","For_W82"),lty=1,lwd = 2, col = c('#9b9696','#ffee32','#b6cc0e','#ed5567','#07aeba','#3a44ff','#f936f6',
+         '#723434','#316022','#05fff2','#b105fc','#fc0505','#210000','#bc883a'),text.col=c('#9b9696','#ffee32','#b6cc0e','#ed5567','#07aeba','#3a44ff','#f936f6',
+         '#723434','#316022','#05fff2','#b105fc','#fc0505','#210000','#bc883a'),pt.cex = 2,ncol = 2,cex = 2,bty = "n")
+
+legend(x=-1.0,y=-0.9,c("Bacteria_unclassified","Planctomycetes","Verrucomicrobia","Proteobacteria","Acidobacteria","Bacteroidetes","Actinobacteria","TM7","Gemmatimonadetes","Chlamydiae","Firmicutes","Chloroflexi","OD1", "Armatimonadetes","Nitrospira","BRC1","WS3","Tenericutes","Spirochaetes"),pch = 19, col = c('#9b9696','#ffee32','#f2701a','#b6cc0e','#ed5567','#07aeba','#3a44ff','#f936f6','#723434','#8ae2cc','#316022','#85f785','#be85f7','#990101','#b105fc','#fc05ba','#fc0505','#210000','#bc883a'),text.col=c('#9b9696','#ffee32','#f2701a','#b6cc0e','#ed5567','#07aeba','#3a44ff','#f936f6','#723434','#8ae2cc','#316022','#85f785','#be85f7','#990101','#b105fc','#fc05ba','#fc0505','#210000','#bc883a'),ncol = 5,cex = 2,bty = "o")
+
+dev.off()
+```
+
+
+## Calculate the correlation between connection degreee and node abundance based on net6
+
+```{r}
+
+net6_nodes_degree<-degree(big_net6)
+labels(net6_nodes_degree)
+cultivar_phyloseq
+r_cultivar_phyloseq<-transform_sample_counts(cultivar_phyloseq,function(x) x/sum(x)) 
+r_net6_sub_cultivar_phyloseq<-prune_taxa(labels(net6_nodes_degree),r_cultivar_phyloseq)
+r_net6_sub_node_size<-taxa_sums(r_net6_sub_cultivar_phyloseq)/136
+r_net6_sub_node_size<-r_net6_sub_node_size[match(labels(net6_nodes_degree),labels(r_net6_sub_node_size))]
+identical(labels(net6_nodes_degree),labels(r_net6_sub_node_size))
+
+net6_lm<-lm(net6_nodes_degree~r_net6_sub_node_size)
+summary(net6_lm)
+#Coefficients:
+#                      Estimate Std. Error t value Pr(>|t|)    
+#(Intercept)            11.5553     0.5905  19.568  < 2e-16 ***
+#r_net6_sub_node_size 3478.5675   450.6270   7.719 5.35e-14 ***
+
+net6_df<-data.frame(net6_degree=net6_nodes_degree,net6_node_size=r_net6_sub_node_size)
+dim(net6_df) # 566 rows and 2 column
+head(net6_df)
+library(ggplot2)
+ 
+tiff('Correlation between node abundance and node connectiveness based on net6.tiff', units="in", width=8, height=6, res=300)
+ggplot(net6_df,aes(net6_degree,net6_node_size,label=rownames(net6_df)))+geom_point()+geom_text(family="Arial",size=3 )+annotate(geom="text",x=10,y=0.015,label="Y = 11.56 + 3478.57 X \n Adj R^2 = 0.10, p = 5.35*e-14",family="Arial",size=3 )+geom_smooth(method = "lm",se=FALSE,color="black",size=0.5)+ggtitle("\n Correlation between node abundance \n and node connectiveness based on net6")+xlab("Node degree")+ylab("OTU abundance")+ theme(panel.background = element_rect(fill='white',color="black"),panel.grid.major = element_blank(),panel.grid.minor = element_blank(),text=element_text(family="Arial",face = 'bold'), plot.title = element_text(family='Arial', hjust = .5,vjust = 3,size = 24,face="bold"), axis.text.x = element_text(family="Arial",size=12),axis.text.y = element_text(family="Arial",size=12),axis.title.x = element_text(family="Arial",size=18,face="bold"),axis.title.y = element_text(family="Arial",size=18,face="bold"))
+dev.off()
+```
+
+## Calculate basic network characters -- Net6
+
+```{r}
+## >>>>> Ag_Soil
+
+Ag_soil_net6_ratio<-length(which(E(Ag_soil_net6)$weight>0))/(length(E(Ag_soil_net6)$weight)) # 48.45%
+Ag_soil_net6_density<-edge_density(Ag_soil_net6,loops = F) # 76.49%
+Ag_soil_net6_degree<-sum(degree(Ag_soil_net6,mode="all"))/length(V(Ag_soil_net6)$name) #37.48
+Ag_soil_net6_betweeness<-sum(sort(betweenness(Ag_soil_net6,directed = FALSE,weight=abs(E(Ag_soil_net6)$weight))))/length(V(Ag_soil_net6)$name) # 5.76
+Ag_soil_net6_closeness<-sum(closeness(Ag_soil_net6,mode = "all",weights = abs(E(Ag_soil_net6)$weight)))/50 # 0.026
+Ag_soil_net6_modularity<-modularity(Ag_soil_net6,weights = abs(E(Ag_soil_net6)$weight),membership(cluster_walktrap(Ag_soil_net6,weight=abs(E(Ag_soil_net6)$weight),steps=4,modularity=TRUE))) #0.0576
+Ag_soil_net6_distance<-mean_distance(Ag_soil_net6,directed = FALSE) # 1.23
+
+## >>>> Ag_WIL
+Ag_WIL_net6_ratio<-length(which(E(Ag_WIL_net6)$weight>0))/(length(E(Ag_WIL_net6)$weight)) # 50.66%
+Ag_WIL_net6_density<-edge_density(Ag_WIL_net6,loops = F) # 49.47%
+Ag_WIL_net6_degree<-sum(degree(Ag_WIL_net6,mode="all"))/length(V(Ag_WIL_net6)$name) #24.24
+Ag_WIL_net6_betweeness<-sum(sort(betweenness(Ag_WIL_net6,directed = FALSE,weight=abs(E(Ag_WIL_net6)$weight))))/length(V(Ag_WIL_net6)$name) #12.38
+Ag_WIL_net6_closeness<-sum(closeness(Ag_WIL_net6,mode = "all",weights = abs(E(Ag_WIL_net6)$weight)))/50 # 0.0208
+Ag_WIL_net6_modularity<-modularity(Ag_WIL_net6,weights = abs(E(Ag_WIL_net6)$weight),membership(cluster_walktrap(Ag_WIL_net6,weight=abs(E(Ag_WIL_net6)$weight),steps=4,modularity=TRUE))) #0.097
+Ag_WIL_net6_distance<-mean_distance(Ag_WIL_net6,directed = FALSE) # 1.51
+
+## >>>>> Ag_DRT
+Ag_DRT_net6_ratio<-length(which(E(Ag_DRT_net6)$weight>0))/(length(E(Ag_DRT_net6)$weight)) # 93.28%
+Ag_DRT_net6_density<-edge_density(Ag_DRT_net6,loops = F) # 11.88%
+Ag_DRT_net6_degree<-sum(degree(Ag_DRT_net6,mode="all"))/length(V(Ag_DRT_net6)$name) #5.58
+Ag_DRT_net6_betweeness<-sum(sort(betweenness(Ag_DRT_net6,directed = FALSE,weight=abs(E(Ag_DRT_net6)$weight))))/length(V(Ag_DRT_net6)$name) #34.02
+Ag_DRT_net6_closeness<-sum(closeness(Ag_DRT_net6,mode = "all",weights = abs(E(Ag_DRT_net6)$weight)))/length(V(Ag_DRT_net6)$name) # 0.006110539
+Ag_DRT_net6_modularity<-modularity(Ag_DRT_net6,weights = abs(E(Ag_DRT_net6)$weight),membership(cluster_walktrap(Ag_DRT_net6,weight=abs(E(Ag_DRT_net6)$weight),steps=4,modularity=TRUE))) #0.236
+Ag_DRT_net6_distance<-mean_distance(Ag_DRT_net6,directed = FALSE) # 2.576
+
+## >>>>> Ag_CNR
+Ag_CNR_net6_ratio<-length(which(E(Ag_CNR_net6)$weight>0))/(length(E(Ag_CNR_net6)$weight)) # 48.75%
+Ag_CNR_net6_density<-edge_density(Ag_CNR_net6,loops = F) # 13.61%
+Ag_CNR_net6_degree<-sum(degree(Ag_CNR_net6,mode="all"))/length(V(Ag_CNR_net6)$name)  #6.53
+Ag_CNR_net6_betweeness<-sum(sort(betweenness(Ag_CNR_net6,directed = FALSE,weight=abs(E(Ag_CNR_net6)$weight))))/length(V(Ag_CNR_net6)$name) #34.73469
+Ag_CNR_net6_closeness<-sum(closeness(Ag_CNR_net6,mode = "all",weights = abs(E(Ag_CNR_net6)$weight)))/length(V(Ag_CNR_net6)$name) # 0.005554585
+Ag_CNR_net6_modularity<-modularity(Ag_CNR_net6,weights = abs(E(Ag_CNR_net6)$weight),membership(cluster_walktrap(Ag_CNR_net6,weight=abs(E(Ag_CNR_net6)$weight),steps=4,modularity=TRUE))) #0.4353249
+Ag_CNR_net6_distance<-mean_distance(Ag_CNR_net6,directed = FALSE) # 2.57
+
+## >>>> Ag_NNW
+Ag_NNW_net6_ratio<-length(which(E(Ag_NNW_net6)$weight>0))/(length(E(Ag_NNW_net6)$weight))# 62.26%
+Ag_NNW_net6_density<-edge_density(Ag_NNW_net6,loops = F) #6.7949%
+Ag_NNW_net6_degree<-sum(degree(Ag_NNW_net6,mode="all"))/length(V(Ag_NNW_net6)$name) #2.65
+Ag_NNW_net6_betweeness<-sum(sort(betweenness(Ag_NNW_net6,directed = FALSE,weight=abs(E(Ag_NNW_net6)$weight))))/length(V(Ag_NNW_net6)$name) # 29.20
+Ag_NNW_net6_closeness<-sum(closeness(Ag_NNW_net6,mode = "all",weights = abs(E(Ag_NNW_net6)$weight)))/length(V(Ag_NNW_net6)$name) #0.001796766
+Ag_NNW_net6_modularity<-modularity(Ag_NNW_net6,weights = abs(E(Ag_NNW_net6)$weight),membership(cluster_walktrap(Ag_NNW_net6,weight=abs(E(Ag_NNW_net6)$weight),steps=4,modularity=TRUE))) #0.6333012
+Ag_NNW_net6_distance<-mean_distance(Ag_NNW_net6,directed = FALSE) # 3.607143
+
+## >>>>>> Ag_SOJ
+Ag_SOJ_net6_ratio<-length(which(E(Ag_SOJ_net6)$weight>0))/(length(E(Ag_SOJ_net6)$weight))# 66.67%
+Ag_SOJ_net6_density<-edge_density(Ag_SOJ_net6,loops = F) # 15.54117%
+Ag_SOJ_net6_degree<-sum(degree(Ag_SOJ_net6,mode="all"))/length(V(Ag_SOJ_net6)$name) # 7.148936
+Ag_SOJ_net6_betweeness<-sum(sort(betweenness(Ag_SOJ_net6,directed = FALSE,weight=abs(E(Ag_SOJ_net6)$weight))))/length(V(Ag_SOJ_net6)$name) # 34.46809
+Ag_SOJ_net6_closeness<-sum(closeness(Ag_SOJ_net6,mode = "all",weights = abs(E(Ag_SOJ_net6)$weight)))/length(V(Ag_SOJ_net6)$name) # 0.0137164
+Ag_SOJ_net6_modularity<-modularity(Ag_SOJ_net6,weights = abs(E(Ag_SOJ_net6)$weight),membership(cluster_walktrap(Ag_SOJ_net6,weight=abs(E(Ag_SOJ_net6)$weight),steps=4,modularity=TRUE))) #0.2624152
+Ag_SOJ_net6_distance<-mean_distance(Ag_SOJ_net6,directed = FALSE) # 2.498612
+
+## >>>> Ag_W82
+Ag_W82_net6_ratio<-length(which(E(Ag_W82_net6)$weight>0))/(length(E(Ag_W82_net6)$weight)) #90.91%
+Ag_W82_net6_density<-edge_density(Ag_W82_net6,loops = F) # 8.418367%
+Ag_W82_net6_degree<-sum(degree(Ag_W82_net6,mode="all"))/length(V(Ag_W82_net6)$name) #4.040816
+Ag_W82_net6_betweeness<-sum(sort(betweenness(Ag_W82_net6,directed = FALSE,weight=abs(E(Ag_W82_net6)$weight))))/length(V(Ag_W82_net6)$name) # 46.34
+Ag_W82_net6_closeness<-sum(closeness(Ag_W82_net6,mode = "all",weights = abs(E(Ag_W82_net6)$weight)))/length(V(Ag_W82_net6)$name) # 0.005532301
+Ag_W82_net6_modularity<-modularity(Ag_W82_net6,weights = abs(E(Ag_W82_net6)$weight),membership(cluster_walktrap(Ag_W82_net6,weight=abs(E(Ag_W82_net6)$weight),steps=4,modularity=TRUE))) #0.5101266
+Ag_W82_net6_distance<-mean_distance(Ag_W82_net6,directed = FALSE) #3.141405
+
+## >>>>>> Ag_W82_up_net6
+Ag_W82_up_net6_ratio<-length(which(E(Ag_W82_up_net6)$weight>0))/(length(E(Ag_W82_up_net6)$weight)) # 0.8602151
+Ag_W82_up_net6_density<-edge_density(Ag_W82_up_net6,loops = F) # 8.60%
+Ag_W82_up_net6_degree<-sum(degree(Ag_W82_up_net6,mode="all"))/length(V(Ag_W82_up_net6)$name) #3.957447
+Ag_W82_up_net6_betweeness<-sum(sort(betweenness(Ag_W82_up_net6,directed = FALSE,weight=abs(E(Ag_W82_up_net6)$weight))))/length(V(Ag_W82_up_net6)$name) # 44.47
+Ag_W82_up_net6_closeness<-sum(closeness(Ag_W82_up_net6,mode = "all",weights = abs(E(Ag_W82_up_net6)$weight)))/length(V(Ag_W82_up_net6)$name) # 0.002893775
+Ag_W82_up_net6_modularity<-modularity(Ag_W82_up_net6,weights = abs(E(Ag_W82_up_net6)$weight),membership(cluster_walktrap(Ag_W82_up_net6,weight=abs(E(Ag_W82_up_net6)$weight),steps=4,modularity=TRUE))) #0.5923241
+Ag_W82_up_net6_distance<-mean_distance(Ag_W82_up_net6,directed = FALSE) #3.385763
+
+## >>>>>> For_Soil
+
+For_soil_net6_ratio<-length(which(E(For_soil_net6)$weight>0))/(length(E(For_soil_net6)$weight)) # 58.03%
+For_soil_net6_density<-edge_density(For_soil_net6,loops = F) # 63.02%
+For_soil_net6_degree<-sum(degree(For_soil_net6,mode="all"))/length(V(For_soil_net6)$name) #30.88
+For_soil_net6_betweeness<-sum(sort(betweenness(For_soil_net6,directed = FALSE,weight=abs(E(For_soil_net6)$weight))))/length(V(For_soil_net6)$name) # 9.06
+For_soil_net6_closeness<-sum(closeness(For_soil_net6,mode = "all",weights = abs(E(For_soil_net6)$weight)))/length(V(For_soil_net6)$name)# 0.028
+For_soil_net6_modularity<-modularity(For_soil_net6,weights = abs(E(For_soil_net6)$weight),membership(cluster_walktrap(For_soil_net6,weight=abs(E(For_soil_net6)$weight),steps=4,modularity=TRUE))) #0.053
+For_soil_net6_distance<-mean_distance(For_soil_net6,directed = FALSE) # 1.370
+
+## >>>>> For_WIL
+For_WIL_net6_ratio<-length(which(E(For_WIL_net6)$weight>0))/(length(E(For_WIL_net6)$weight)) # 60.66%
+For_WIL_net6_density<-edge_density(For_WIL_net6,loops = F) #  24.90%
+For_WIL_net6_degree<-sum(degree(For_WIL_net6,mode="all"))/length(V(For_WIL_net6)$name) #12.2
+For_WIL_net6_betweeness<-sum(sort(betweenness(For_WIL_net6,directed = FALSE,weight=abs(E(For_WIL_net6)$weight))))/length(V(For_WIL_net6)$name) #23.3
+For_WIL_net6_closeness<-sum(closeness(For_WIL_net6,mode = "all",weights = abs(E(For_WIL_net6)$weight)))/length(V(For_WIL_net6)$name) # 0.01806482
+For_WIL_net6_modularity<-modularity(For_WIL_net6,weights = abs(E(For_WIL_net6)$weight),membership(cluster_walktrap(For_WIL_net6,weight=abs(E(For_WIL_net6)$weight),steps=4,modularity=TRUE))) #0.230108
+For_WIL_net6_distance<-mean_distance(For_WIL_net6,directed = FALSE) # 1.921633
+
+## >>>>> For_DRT
+
+For_DRT_net6_ratio<-length(which(E(For_DRT_net6)$weight>0))/(length(E(For_DRT_net6)$weight)) # 70.33%
+For_DRT_net6_density<-edge_density(For_DRT_net6,loops = F) # 7.74%
+For_DRT_net6_degree<-sum(degree(For_DRT_net6,mode="all"))/length(V(For_DRT_net6)$name) # 3.71
+For_DRT_net6_betweeness<-sum(sort(betweenness(For_DRT_net6,directed = FALSE,weight=abs(E(For_DRT_net6)$weight))))/length(V(For_DRT_net6)$name) #55.98
+For_DRT_net6_closeness<-sum(closeness(For_DRT_net6,mode = "all",weights = abs(E(For_DRT_net6)$weight)))/length(V(For_DRT_net6)$name) # 0.005087751
+For_DRT_net6_modularity<-modularity(For_DRT_net6,weights = abs(E(For_DRT_net6)$weight),membership(cluster_walktrap(For_DRT_net6,weight=abs(E(For_DRT_net6)$weight),steps=4,modularity=TRUE))) #0.5276526
+For_DRT_net6_distance<-mean_distance(For_DRT_net6,directed = FALSE) #3.508318
+
+## >>>>> For_DRT
+
+For_CNR_net6_ratio<-length(which(E(For_CNR_net6)$weight>0))/(length(E(For_CNR_net6)$weight)) #94.57%
+For_CNR_net6_density<-edge_density(For_CNR_net6,loops = F) # 10.69%
+For_CNR_net6_degree<-sum(degree(For_CNR_net6,mode="all"))/length(V(For_CNR_net6)$name) #4.38
+For_CNR_net6_betweeness<-sum(sort(betweenness(For_CNR_net6,directed = FALSE,weight=abs(E(For_CNR_net6)$weight))))/length(V(For_CNR_net6)$name) #56.24
+For_CNR_net6_closeness<-sum(closeness(For_CNR_net6,mode = "all",weights = abs(E(For_CNR_net6)$weight)))/length(V(For_CNR_net6)$name) #0.01285684
+For_CNR_net6_modularity<-modularity(For_CNR_net6,weights = abs(E(For_CNR_net6)$weight),membership(cluster_walktrap(For_CNR_net6,weight=abs(E(For_CNR_net6)$weight),steps=4,modularity=TRUE))) #0.3808601
+For_CNR_net6_distance<-mean_distance(For_CNR_net6,directed = FALSE) #3.738676
+
+## >>>>> For_NNW
+For_NNW_net6_ratio<-length(which(E(For_NNW_net6)$weight>0))/(length(E(For_NNW_net6)$weight))# 84.73%
+For_NNW_net6_density<-edge_density(For_NNW_net6,loops = F) #19.61%
+For_NNW_net6_degree<-sum(degree(For_NNW_net6,mode="all"))/length(V(For_NNW_net6)$name) #8.83
+For_NNW_net6_betweeness<-sum(sort(betweenness(For_NNW_net6,directed = FALSE,weight=abs(E(For_NNW_net6)$weight))))/length(V(For_NNW_net6)$name) # 27.04
+For_NNW_net6_closeness<-sum(closeness(For_NNW_net6,mode = "all",weights = abs(E(For_NNW_net6)$weight)))/length(V(For_NNW_net6)$name) # 0.0177
+For_NNW_net6_modularity<-modularity(For_NNW_net6,weights = abs(E(For_NNW_net6)$weight),membership(cluster_walktrap(For_NNW_net6,weight=abs(E(For_NNW_net6)$weight),steps=4,modularity=TRUE))) #0.28432
+For_NNW_net6_distance<-mean_distance(For_NNW_net6,directed = FALSE) # 2.192271
+
+## >>>>>> For_SOJ
+
+For_SOJ_net6_ratio<-length(which(E(For_SOJ_net6)$weight>0))/(length(E(For_SOJ_net6)$weight))# 45.54%
+For_SOJ_net6_density<-edge_density(For_SOJ_net6,loops = F) # 9.76%
+For_SOJ_net6_degree<-sum(degree(For_SOJ_net6,mode="all"))/length(V(For_SOJ_net6)$name) # 4.39
+For_SOJ_net6_betweeness<-sum(sort(betweenness(For_SOJ_net6,directed = FALSE,weight=abs(E(For_SOJ_net6)$weight))))/length(V(For_SOJ_net6)$name) # 47.76
+For_SOJ_net6_closeness<-sum(closeness(For_SOJ_net6,mode = "all",weights = abs(E(For_SOJ_net6)$weight)))/length(V(For_SOJ_net6)$name) # 0.0132
+For_SOJ_net6_modularity<-modularity(For_SOJ_net6,weights = abs(E(For_SOJ_net6)$weight),membership(cluster_walktrap(For_SOJ_net6,weight=abs(E(For_SOJ_net6)$weight),steps=4,modularity=TRUE))) # 0.4494286
+For_SOJ_net6_distance<-mean_distance(For_SOJ_net6,directed = FALSE) # 3.101449
+
+## >>>>> For_W82
+For_W82_net6_ratio<-length(which(E(For_W82_net6)$weight>0))/(length(E(For_W82_net6)$weight)) #77.27%
+For_W82_net6_density<-edge_density(For_W82_net6,loops = F) # 6.67%
+For_W82_net6_degree<-sum(degree(For_W82_net6,mode="all"))/length(V(For_W82_net6)$name) #2.93
+For_W82_net6_betweeness<-sum(sort(betweenness(For_W82_net6,directed = FALSE,weight=abs(E(For_W82_net6)$weight))))/length(V(For_W82_net6)$name) # 62.22
+For_W82_net6_closeness<-sum(closeness(For_W82_net6,mode = "all",weights = abs(E(For_W82_net6)$weight)))/length(V(For_W82_net6)$name) # 0.004155
+For_W82_net6_modularity<-modularity(For_W82_net6,weights = abs(E(For_W82_net6)$weight),membership(cluster_walktrap(For_W82_net6,weight=abs(E(For_W82_net6)$weight),steps=4,modularity=TRUE))) #0.5765558
+For_W82_net6_distance<-mean_distance(For_W82_net6,directed = FALSE) # 4.240741
+
+```
+
+## Calculate shared node percentage between soil sample and rhizosphere samples
+## Based on net4
+
+```{r}
+length(intersect(V(Ag_CV1_net4)$name,V(Ag_soil_net4)$name))/length(unique(V(Ag_CV1_net4)$name,V(Ag_soil_net4)$name)) #71.33%
+length(intersect(V(Ag_CV2_net4)$name,V(Ag_soil_net4)$name))/length(unique(V(Ag_CV2_net4)$name,V(Ag_soil_net4)$name)) #64.44%
+length(intersect(V(Ag_CV3_net4)$name,V(Ag_soil_net4)$name))/length(unique(V(Ag_CV3_net4)$name,V(Ag_soil_net4)$name)) #67.81%
+length(intersect(V(Ag_CV4_net4)$name,V(Ag_soil_net4)$name))/length(unique(V(Ag_CV4_net4)$name,V(Ag_soil_net4)$name)) #69.18%
+length(intersect(V(Ag_CV5_net4)$name,V(Ag_soil_net4)$name))/length(unique(V(Ag_CV5_net4)$name,V(Ag_soil_net4)$name)) #73.41%
+length(intersect(V(Ag_CV6_net4)$name,V(Ag_soil_net4)$name))/length(unique(V(Ag_CV6_net4)$name,V(Ag_soil_net4)$name)) #72.08%
+
+length(intersect(V(For_CV1_net4)$name,V(For_soil_net4)$name))/length(unique(V(For_CV1_net4)$name,V(For_soil_net4)$name)) #74.39%
+length(intersect(V(For_CV2_net4)$name,V(For_soil_net4)$name))/length(unique(V(For_CV2_net4)$name,V(For_soil_net4)$name)) #72.83%
+length(intersect(V(For_CV3_net4)$name,V(For_soil_net4)$name))/length(unique(V(For_CV3_net4)$name,V(For_soil_net4)$name)) #73.92%
+length(intersect(V(For_CV4_net4)$name,V(For_soil_net4)$name))/length(unique(V(For_CV4_net4)$name,V(For_soil_net4)$name)) #71.87%
+length(intersect(V(For_CV5_net4)$name,V(For_soil_net4)$name))/length(unique(V(For_CV5_net4)$name,V(For_soil_net4)$name)) #75.50%
+length(intersect(V(For_CV6_net4)$name,V(For_soil_net4)$name))/length(unique(V(For_CV6_net4)$name,V(For_soil_net4)$name)) #73.77%
+```

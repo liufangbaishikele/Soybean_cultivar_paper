@@ -1,0 +1,401 @@
+Author: "Fang Liu"
+date: "4/13/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Set up working directory and upload packages
+```{r}
+setwd('/Users/fangliu/Documents/2016_cultivar_project/R_analysis/LefSe_analysis/Genus_level/')
+library(RColorBrewer)
+library(plyr)
+library(pheatmap)
+library(phyloseq)
+library(dplyr)
+```
+
+
+## --------enriched genus------------
+
+```{r}
+## Ag enriched genus
+
+Ag_WIL_enrich<-read.csv(file="Ag_WIL_enriched_genus_update2.csv")
+colnames(Ag_WIL_enrich)<-c('K_Ag_WIL_en','P_Ag_WIL_en','C_Ag_WIL_en','O_Ag_WIL_en','F_Ag_WIL_en','G_Ag_WIL_en','OTUID','logc_ave_Ag_WIL_en','Comp_Ag_WIL_en','LDA_Ag_WIL_en','p_val_Ag_WIL_en')
+dim(Ag_WIL_enrich)
+head(Ag_WIL_enrich)
+#Here loc_ave means the log of highest class average
+
+Ag_DRT_enrich<-read.csv(file="Ag_DRT_enriched_genus_update2.csv")
+colnames(Ag_DRT_enrich)<-c('K_Ag_DRT_en','P_Ag_DRT_en','C_Ag_DRT_en','O_Ag_DRT_en','F_Ag_DRT_en','G_Ag_DRT_en','OTUID','logc_ave_Ag_DRT_en','Comp_Ag_DRT_en','LDA_Ag_DRT_en','p_val_Ag_DRT_en')
+dim(Ag_DRT_enrich)
+
+Ag_CNR_enrich<-read.csv(file="Ag_CNR_enriched_genus_update2.csv")
+colnames(Ag_CNR_enrich)<-c('K_Ag_CNR_en','P_Ag_CNR_en','C_Ag_CNR_en','O_Ag_CNR_en','F_Ag_CNR_en','G_Ag_CNR_en','OTUID','logc_ave_Ag_CNR_en','Comp_Ag_CNR_en','LDA_Ag_CNR_en','p_val_Ag_CNR_en')
+dim(Ag_CNR_enrich)
+
+Ag_NNW_enrich<-read.csv(file="Ag_NNW_enriched_genus_update2.csv")
+colnames(Ag_NNW_enrich)<-c('K_Ag_NNW_en','P_Ag_NNW_en','C_Ag_NNW_en','O_Ag_NNW_en','F_Ag_NNW_en','G_Ag_NNW_en','OTUID','logc_ave_Ag_NNW_en','Comp_Ag_NNW_en','LDA_Ag_NNW_en','p_val_Ag_NNW_en')
+dim(Ag_NNW_enrich)
+
+Ag_SOJ_enrich<-read.csv(file="Ag_SOJ_enriched_genus_update2.csv")
+colnames(Ag_SOJ_enrich)<-c('K_Ag_SOJ_en','P_Ag_SOJ_en','C_Ag_SOJ_en','O_Ag_SOJ_en','F_Ag_SOJ_en','G_Ag_SOJ_en','OTUID','logc_ave_Ag_SOJ_en','Comp_Ag_SOJ_en','LDA_Ag_SOJ_en','p_val_Ag_SOJ_en')
+dim(Ag_SOJ_enrich)
+
+Ag_W82_enrich<-read.csv(file="Ag_W82_enriched_genus_update2.csv")
+colnames(Ag_W82_enrich)<-c('K_Ag_W82_en','P_Ag_W82_en','C_Ag_W82_en','O_Ag_W82_en','F_Ag_W82_en','G_Ag_W82_en','OTUID','logc_ave_Ag_W82_en','Comp_Ag_W82_en','LDA_Ag_W82_en','p_val_Ag_W82_en')
+dim(Ag_W82_enrich)
+
+## Forest enriched genus
+
+For_WIL_enrich<-read.csv(file="For_WIL_enriched_genus_update2.csv")
+colnames(For_WIL_enrich)<-c('K_For_WIL_en','P_For_WIL_en','C_For_WIL_en','O_For_WIL_en','F_For_WIL_en','G_For_WIL_en','OTUID','logc_ave_For_WIL_en','Comp_For_WIL_en','LDA_For_WIL_en','p_val_For_WIL_en')
+dim(For_WIL_enrich)
+
+For_DRT_enrich<-read.csv(file="For_DRT_enriched_genus_update2.csv")
+colnames(For_DRT_enrich)<-c('K_For_DRT_en','P_For_DRT_en','C_For_DRT_en','O_For_DRT_en','F_For_DRT_en','G_For_DRT_en','OTUID','logc_ave_For_DRT_en','Comp_For_DRT_en','LDA_For_DRT_en','p_val_For_DRT_en')
+dim(For_DRT_enrich)
+
+For_CNR_enrich<-read.csv(file="For_CNR_enriched_genus_update2.csv")
+colnames(For_CNR_enrich)<-c('K_For_CNR_en','P_For_CNR_en','C_For_CNR_en','O_For_CNR_en','F_For_CNR_en','G_For_CNR_en','OTUID','logc_ave_For_CNR_en','Comp_For_CNR_en','LDA_For_CNR_en','p_val_For_CNR_en')
+dim(For_CNR_enrich)
+
+For_NNW_enrich<-read.csv(file="For_NNW_enriched_genus_update2.csv")
+colnames(For_NNW_enrich)<-c('K_For_NNW_en','P_For_NNW_en','C_For_NNW_en','O_For_NNW_en','F_For_NNW_en','G_For_NNW_en','OTUID','logc_ave_For_NNW_en','Comp_For_NNW_en','LDA_For_NNW_en','p_val_For_NNW_en')
+dim(For_NNW_enrich)
+
+For_SOJ_enrich<-read.csv(file="For_SOJ_enriched_genus_update2.csv")
+colnames(For_SOJ_enrich)<-c('K_For_SOJ_en','P_For_SOJ_en','C_For_SOJ_en','O_For_SOJ_en','F_For_SOJ_en','G_For_SOJ_en','OTUID','logc_ave_For_SOJ_en','Comp_For_SOJ_en','LDA_For_SOJ_en','p_val_For_SOJ_en')
+dim(For_SOJ_enrich)
+
+For_W82_enrich<-read.csv(file="For_W82_enriched_genus_update2.csv")
+colnames(For_W82_enrich)<-c('K_For_W82_en','P_For_W82_en','C_For_W82_en','O_For_W82_en','F_For_W82_en','G_For_W82_en','OTUID','logc_ave_For_W82_en','Comp_For_W82_en','LDA_For_W82_en','p_val_For_W82_en')
+dim(For_W82_enrich)
+
+
+
+temp<-join_all(list(Ag_WIL_enrich,Ag_DRT_enrich,Ag_CNR_enrich,Ag_NNW_enrich,Ag_SOJ_enrich,Ag_W82_enrich,For_WIL_enrich,For_DRT_enrich,For_CNR_enrich,For_NNW_enrich,For_SOJ_enrich,For_W82_enrich),by="OTUID",type='full')
+head(temp)
+dim(temp)
+Enriched_genus_comparison<-temp[,c(7,6,9,10,17,19,20,27,29,30,37,39,40,47,49,50,57,59,60,67,69,70,77,79,80,87,89,90,97,99,100,107,107,110,117,119,120)]
+head(Enriched_genus_comparison)
+#write.csv(Enriched_genus_comparison,file="enriched_genus_comparison.csv")
+enriched_genus_LDA<-read.csv(file="enriched_genus_comparison_edit.csv",header = T,row.names = 1)
+dim(enriched_genus_LDA)
+enriched_genus_LDA[1:5,1:8]
+enriched_genus_LDA<-enriched_genus_LDA[,c(2,grep("LDA_",colnames(enriched_genus_LDA)))]
+enriched_genus_LDA[is.na(enriched_genus_LDA)]<-0
+dim(enriched_genus_LDA)
+head(enriched_genus_LDA)
+
+#215 genus were significantly enriched in rhizosphere 
+
+row.names(enriched_genus_LDA)<-enriched_genus_LDA$Genus
+
+tiff('enriched_genus_in_rhizosphere_heatmap.tiff', units="in", width=18, height=14, res=300)
+pheatmap(enriched_genus_LDA[,2:13],color = colorRampPalette(rev(brewer.pal(n = 11, name =
+  "RdYlBu")))(100),cluster_rows = TRUE,show_rownames = TRUE,cluster_cols =TRUE, scale="row",clustering_distance_rows = 'euclidean',clustering_distance_cols = 'euclidean',border_color = NA,fontsize=20,fontsize_row = 5,fontsize_col =15,labels_col = c("Ag_WIL","Ag_DRT","Ag_CNR","Ag_NNW","Ag_SOJ","Ag_W82","For_WIL","For_DRT","For_CNR","For_NNW","For_SOJ","For_W82"),legend_breaks = c(-3,-2,-1,0,1,2,3),legend_labels = c("0","1","2","3","4","5","6"))
+dev.off()
+```
+
+
+## --------depleted genus------------
+
+
+```{r}
+
+## Ag depleted genus
+Ag_WIL_deplete<-read.csv(file="Ag_WIL_depleted_genus_update2.csv")
+colnames(Ag_WIL_deplete)<-c('K_Ag_WIL_dp','P_Ag_WIL_dp','C_Ag_WIL_dp','O_Ag_WIL_dp','F_Ag_WIL_dp','G_Ag_WIL_dp','OTUID','logc_ave_Ag_WIL_dp','Comp_Ag_WIL_dp','LDA_Ag_WIL_dp','p_val_Ag_WIL_dp')
+dim(Ag_WIL_deplete)
+head(Ag_WIL_deplete)
+
+Ag_DRT_deplete<-read.csv(file="Ag_DRT_depleted_genus_update2.csv")
+colnames(Ag_DRT_deplete)<-c('K_Ag_DRT_dp','P_Ag_DRT_dp','C_Ag_DRT_dp','O_Ag_DRT_dp','F_Ag_DRT_dp','G_Ag_DRT_dp','OTUID','logc_ave_Ag_DRT_dp','Comp_Ag_DRT_dp','LDA_Ag_DRT_dp','p_val_Ag_DRT_dp')
+dim(Ag_DRT_deplete)
+
+Ag_CNR_deplete<-read.csv(file="Ag_CNR_depleted_genus_update2.csv")
+colnames(Ag_CNR_deplete)<-c('K_Ag_CNR_dp','P_Ag_CNR_dp','C_Ag_CNR_dp','O_Ag_CNR_dp','F_Ag_CNR_dp','G_Ag_CNR_dp','OTUID','logc_ave_Ag_CNR_dp','Comp_Ag_CNR_dp','LDA_Ag_CNR_dp','p_val_Ag_CNR_dp')
+dim(Ag_CNR_deplete)
+
+Ag_NNW_deplete<-read.csv(file="Ag_NNW_depleted_genus_update2.csv")
+colnames(Ag_NNW_deplete)<-c('K_Ag_NNW_dp','P_Ag_NNW_dp','C_Ag_NNW_dp','O_Ag_NNW_dp','F_Ag_NNW_dp','G_Ag_NNW_dp','OTUID','logc_ave_Ag_NNW_dp','Comp_Ag_NNW_dp','LDA_Ag_NNW_dp','p_val_Ag_NNW_dp')
+dim(Ag_NNW_deplete)
+
+Ag_SOJ_deplete<-read.csv(file="Ag_SOJ_depleted_genus_update2.csv")
+colnames(Ag_SOJ_deplete)<-c('K_Ag_SOJ_dp','P_Ag_SOJ_dp','C_Ag_SOJ_dp','O_Ag_SOJ_dp','F_Ag_SOJ_dp','G_Ag_SOJ_dp','OTUID','logc_ave_Ag_SOJ_dp','Comp_Ag_SOJ_dp','LDA_Ag_SOJ_dp','p_val_Ag_SOJ_dp')
+dim(Ag_SOJ_deplete)
+
+Ag_W82_deplete<-read.csv(file="Ag_W82_depleted_genus_update2.csv")
+colnames(Ag_W82_deplete)<-c('K_Ag_W82_dp','P_Ag_W82_dp','C_Ag_W82_dp','O_Ag_W82_dp','F_Ag_W82_dp','G_Ag_W82_dp','OTUID','logc_ave_Ag_W82_dp','Comp_Ag_W82_dp','LDA_Ag_W82_dp','p_val_Ag_W82_dp')
+dim(Ag_W82_deplete)
+
+## Forest depleted genus
+
+For_WIL_deplete<-read.csv(file="For_WIL_depleted_genus_update2.csv")
+colnames(For_WIL_deplete)<-c('K_For_WIL_dp','P_For_WIL_dp','C_For_WIL_dp','O_For_WIL_dp','F_For_WIL_dp','G_For_WIL_dp','OTUID','logc_ave_For_WIL_dp','Comp_For_WIL_dp','LDA_For_WIL_dp','p_val_For_WIL_dp')
+dim(For_WIL_deplete)
+
+For_DRT_deplete<-read.csv(file="For_DRT_depleted_genus_update2.csv")
+colnames(For_DRT_deplete)<-c('K_For_DRT_dp','P_For_DRT_dp','C_For_DRT_dp','O_For_DRT_dp','F_For_DRT_dp','G_For_DRT_dp','OTUID','logc_ave_For_DRT_dp','Comp_For_DRT_dp','LDA_For_DRT_dp','p_val_For_DRT_dp')
+dim(For_DRT_deplete)
+
+For_CNR_deplete<-read.csv(file="For_CNR_depleted_genus_update2.csv")
+colnames(For_CNR_deplete)<-c('K_For_CNR_dp','P_For_CNR_dp','C_For_CNR_dp','O_For_CNR_dp','F_For_CNR_dp','G_For_CNR_dp','OTUID','logc_ave_For_CNR_dp','Comp_For_CNR_dp','LDA_For_CNR_dp','p_val_For_CNR_dp')
+dim(For_CNR_deplete)
+
+For_NNW_deplete<-read.csv(file="For_NNW_depleted_genus_update2.csv")
+colnames(For_NNW_deplete)<-c('K_For_NNW_dp','P_For_NNW_dp','C_For_NNW_dp','O_For_NNW_dp','F_For_NNW_dp','G_For_NNW_dp','OTUID','logc_ave_For_NNW_dp','Comp_For_NNW_dp','LDA_For_NNW_dp','p_val_For_NNW_dp')
+dim(For_NNW_deplete)
+
+For_SOJ_deplete<-read.csv(file="For_SOJ_depleted_genus_update2.csv")
+colnames(For_SOJ_deplete)<-c('K_For_SOJ_dp','P_For_SOJ_dp','C_For_SOJ_dp','O_For_SOJ_dp','F_For_SOJ_dp','G_For_SOJ_dp','OTUID','logc_ave_For_SOJ_dp','Comp_For_SOJ_dp','LDA_For_SOJ_dp','p_val_For_SOJ_dp')
+dim(For_SOJ_deplete)
+
+For_W82_deplete<-read.csv(file="For_W82_depleted_genus_update2.csv")
+colnames(For_W82_deplete)<-c('K_For_W82_dp','P_For_W82_dp','C_For_W82_dp','O_For_W82_dp','F_For_W82_dp','G_For_W82_dp','OTUID','logc_ave_For_W82_dp','Comp_For_W82_dp','LDA_For_W82_dp','p_val_For_W82_dp')
+dim(For_W82_deplete)
+
+temp<-join_all(list(Ag_WIL_deplete,Ag_DRT_deplete,Ag_CNR_deplete,Ag_NNW_deplete,Ag_SOJ_deplete,Ag_W82_deplete,For_WIL_deplete,For_DRT_deplete,For_CNR_deplete,For_NNW_deplete,For_SOJ_deplete,For_W82_deplete),by="OTUID",type='full')
+depleted_genus_comparison<-temp[,c(7,6,9,10,17,19,20,27,29,30,37,39,40,47,49,50,57,59,60,67,69,70,77,79,80,87,89,90,97,99,100,107,107,110,117,119,120)]
+head(depleted_genus_comparison)
+#write.csv(depleted_genus_comparison,file="depleted_genus_comparison.csv")
+depleted_genus_LDA<-read.csv(file="depleted_genus_comparison_edit.csv",header = T,row.names = 1)
+head(depleted_genus_LDA)
+depleted_genus_LDA<-depleted_genus_LDA[,c(2,grep("LDA_",colnames(depleted_genus_LDA)))]
+depleted_genus_LDA[is.na(depleted_genus_LDA)]<-0
+dim(depleted_genus_LDA)
+
+#215 genus were significantly depleted in rhizosphere 
+
+row.names(depleted_genus_LDA)<-depleted_genus_LDA$Genus
+tiff('depleted_genus_in_rhizosphere_heatmap.tiff', units="in", width=18, height=14, res=300)
+pheatmap(depleted_genus_LDA[,2:13],color = colorRampPalette(brewer.pal(n = 9, name =
+  "Greens"))(100),cluster_rows = TRUE,show_rownames = TRUE,cluster_cols =TRUE, scale="row",clustering_distance_rows = 'euclidean',clustering_distance_cols = 'euclidean',border_color = NA,fontsize=20,fontsize_row = 5,fontsize_col =15,labels_col = c("Ag_WIL","Ag_DRT","Ag_CNR","Ag_NNW","Ag_SOJ","Ag_W82","For_WIL","For_DRT","For_CNR","For_NNW","For_SOJ","For_W82"),legend_breaks = c(-3,-2,-1,0,1,2,3),legend_labels = c("0","1","2","3","4","5","6"))
+dev.off()
+```
+
+
+##Using enriched and depleted genus generate taxonomic dedrogram
+
+
+```{r}
+setwd("/Users/fangliu/Documents/2016_cultivar_project/R_analysis/LefSe_analysis/Genus_level/LefSe_to_graphlan")
+# This shared file is phyloseq based clustering to OTU, level=1, i.e., genus level
+cultivar_phyloseq<-import_mothur(mothur_shared_file =  "cultivar.trim.contigs.good.unique.good.filter.unique.precluster.pick.pds.wang.pick.tx.1.shared",mothur_constaxonomy_file = "cultivar.trim.contigs.good.unique.good.filter.unique.precluster.pick.pds.wang.pick.tx.1.cons.taxonomy")
+colnames(tax_table(cultivar_phyloseq))<-c('Kingdom','Phylum','Class','Order','Family','Genus')
+rank_names(cultivar_phyloseq)
+LDA_list<-unique(c(as.character(depleted_genus_comparison$OTUID),as.character(Enriched_genus_comparison$OTUID)))
+length(LDA_list) # 299 genera were significant enriched or depleted in rhizosphere compared with bulk soil sample
+LDA_subset<-prune_taxa(LDA_list,cultivar_phyloseq)
+LDA_subset
+LDA_taxonomy<-data.frame(tax_table(LDA_subset))
+#write.csv(LDA_taxonomy,file="LDA_sig_genus_taxa.csv")
+# So, this LDA taxonomy table were used to generate tree file for GraPhlAn analysis
+```
+
+## Calculate node size
+
+```{r}
+rarefied_cultivar_phyloseq<-rarefy_even_depth(cultivar_phyloseq,sample.size = min(sample_sums(cultivar_phyloseq)),rngseed=1013,replace=FALSE,trimOTUs = TRUE)
+cultivar_meta_for_graphlan<-read.csv("cultivar_meta_for_graphlan.csv",header = T,row.names = 1)
+cultivar_meta_for_graphlan<-sample_data(cultivar_meta_for_graphlan)
+rarefied_cultivar_phyloseq<-merge_phyloseq(rarefied_cultivar_phyloseq,cultivar_meta_for_graphlan)
+
+merged_cultivar_phyloseq<-merge_samples(rarefied_cultivar_phyloseq,group = "Lefse_classes",fun = mean)
+
+r_merged_cultivar_phyloseq<-transform_sample_counts(merged_cultivar_phyloseq,function(x) x/sum(x))
+
+## subset to just include LDA_significant genus
+
+sub_r_merged_cultivat_phyloseq<-prune_taxa(LDA_list,r_merged_cultivar_phyloseq)
+# 299 taxa and 14 samples
+# "Ag_WIL"   "Ag_DRT"   "Ag_CNR"   "Ag_NNW"   "Ag_SOJ"   "Ag_W82"   "Ag_soil" "For_WIL"  "For_DRT"  "For_CNR"  "For_NNW"  "For_SOJ"  "For_W82"  "For_soil"
+
+# calculate node size
+#1) Phylum level
+phylum_phyloseq<-tax_glom(sub_r_merged_cultivat_phyloseq,taxrank = rank_names(sub_r_merged_cultivat_phyloseq)[2],NArm = TRUE)
+phylum_phyloseq
+tax_table(phylum_phyloseq)
+phylum_clade_size<-data.frame(tax_table(phylum_phyloseq)[,2],para="clade_marker_size",size=taxa_sums(phylum_phyloseq)*500)
+dim(phylum_clade_size)
+#write.csv(phylum_clade_size,file="phylom_node_size.csv")
+
+#2) Class level
+class_phyloseq<-tax_glom(sub_r_merged_cultivat_phyloseq,taxrank = rank_names(sub_r_merged_cultivat_phyloseq)[3],NArm=TRUE)
+class_phyloseq
+tax_table(class_phyloseq)
+
+class_clade_size<-data.frame(tax_table(class_phyloseq)[,3],para="clade_marker_size",size=taxa_sums(class_phyloseq)*500)
+dim(class_clade_size)
+#write.csv(class_clade_size,file="class_node_size.csv")
+
+#3) Order level
+order_phyloseq<-tax_glom(sub_r_merged_cultivat_phyloseq,taxrank = rank_names(sub_r_merged_cultivat_phyloseq)[4],NArm = TRUE)
+order_phyloseq
+tax_table(order_phyloseq)
+
+order_clade_size<-data.frame(tax_table(order_phyloseq)[,4],para="clade_marker_size",size=taxa_sums(order_phyloseq)*500)
+dim(order_clade_size)
+#write.csv(order_clade_size,file="order_node_size.csv")
+
+#4) family level
+family_phyloseq<-tax_glom(sub_r_merged_cultivat_phyloseq,taxrank = rank_names(sub_r_merged_cultivat_phyloseq)[5],NArm = TRUE)
+family_phyloseq
+tax_table(family_phyloseq)
+family_clade_size<-data.frame(tax_table(family_phyloseq)[,5],para="clade_marker_size",size=taxa_sums(family_phyloseq)*500)
+dim(family_clade_size)
+#write.csv(family_clade_size,file="family_node_size.csv")
+
+
+#5) genus level
+genus_phyloseq<-tax_glom(sub_r_merged_cultivat_phyloseq,taxrank = rank_names(sub_r_merged_cultivat_phyloseq)[6],NArm = TRUE)
+genus_phyloseq
+tax_table(genus_phyloseq)
+
+genus_clade_size<-data.frame(tax_table(genus_phyloseq)[,6],para="clade_marker_size",size=taxa_sums(genus_phyloseq)*500)
+dim(genus_clade_size)
+#write.csv(genus_clade_size,file="genus_node_size.csv")
+```
+
+
+## calculate LDA-score-based ring alpha 
+
+```{r}
+Ag_WIL_ring_alpha<-join_all(list(enriched_genus_LDA[,c(1,2)],depleted_genus_LDA[,c(1,2)],LDA_taxonomy),by="Genus",type = "full")
+#write.csv(Ag_WIL_ring_alpha,file="Ag_WIL_ring_alpha.csv")
+
+Ag_DRT_ring_alpha<-join_all(list(enriched_genus_LDA[,c(1,3)],depleted_genus_LDA[,c(1,3)],LDA_taxonomy),by="Genus",type = "full")
+#write.csv(Ag_DRT_ring_alpha,file="Ag_DRT_ring_alpha.csv")
+
+Ag_CNR_ring_alpha<-join_all(list(enriched_genus_LDA[,c(1,4)],depleted_genus_LDA[,c(1,4)],LDA_taxonomy),by="Genus",type = "full")
+#write.csv(Ag_CNR_ring_alpha,file="Ag_CNR_ring_alpha.csv")
+
+Ag_NNW_ring_alpha<-join_all(list(enriched_genus_LDA[,c(1,5)],depleted_genus_LDA[,c(1,5)],LDA_taxonomy),by="Genus",type = "full")
+#write.csv(Ag_NNW_ring_alpha,file="Ag_NNW_ring_alpha.csv")
+
+Ag_SOJ_ring_alpha<-join_all(list(enriched_genus_LDA[,c(1,6)],depleted_genus_LDA[,c(1,6)],LDA_taxonomy),by="Genus",type = "full")
+#write.csv(Ag_SOJ_ring_alpha,file="Ag_SOJ_ring_alpha.csv")
+
+Ag_W82_ring_alpha<-join_all(list(enriched_genus_LDA[,c(1,7)],depleted_genus_LDA[,c(1,7)],LDA_taxonomy),by="Genus",type = "full")
+#write.csv(Ag_W82_ring_alpha,file="Ag_W82_ring_alpha.csv")
+
+For_WIL_ring_alpha<-join_all(list(enriched_genus_LDA[,c(1,8)],depleted_genus_LDA[,c(1,8)],LDA_taxonomy),by="Genus",type = "full")
+#write.csv(For_WIL_ring_alpha,file="For_WIL_ring_alpha.csv")
+
+For_DRT_ring_alpha<-join_all(list(enriched_genus_LDA[,c(1,9)],depleted_genus_LDA[,c(1,9)],LDA_taxonomy),by="Genus",type = "full")
+#write.csv(For_DRT_ring_alpha,file="For_DRT_ring_alpha.csv")
+
+For_CNR_ring_alpha<-join_all(list(enriched_genus_LDA[,c(1,10)],depleted_genus_LDA[,c(1,10)],LDA_taxonomy),by="Genus",type = "full")
+#write.csv(For_CNR_ring_alpha,file="For_CNR_ring_alpha.csv")
+
+For_NNW_ring_alpha<-join_all(list(enriched_genus_LDA[,c(1,11)],depleted_genus_LDA[,c(1,11)],LDA_taxonomy),by="Genus",type = "full")
+#write.csv(For_NNW_ring_alpha,file="For_NNW_ring_alpha.csv")
+
+For_SOJ_ring_alpha<-join_all(list(enriched_genus_LDA[,c(1,12)],depleted_genus_LDA[,c(1,12)],LDA_taxonomy),by="Genus",type = "full")
+#write.csv(For_SOJ_ring_alpha,file="For_SOJ_ring_alpha.csv")
+
+For_W82_ring_alpha<-join_all(list(enriched_genus_LDA[,c(1,13)],depleted_genus_LDA[,c(1,13)],LDA_taxonomy),by="Genus",type = "full")
+#write.csv(For_W82_ring_alpha,file="For_W82_ring_alpha.csv")
+```
+
+## calculate how many genus were consistently enriched / depleted in all samples
+
+```{r}
+integrated_LDA_df<-join_all(list(enriched_genus_LDA,depleted_genus_LDA,LDA_taxonomy),by="Genus",type="full")
+head(integrated_LDA_df)
+integrated_LDA_df[is.na(integrated_LDA_df)]<-0
+rownames(integrated_LDA_df)<-integrated_LDA_df$Genus
+dim(integrated_LDA_df) # 299, 30
+LDA_en_and_dp_df<-integrated_LDA_df[,c(2:25)]
+head(LDA_en_and_dp_df)
+LDA_en_df<-integrated_LDA_df[,grep ('_en',colnames( integrated_LDA_df))]
+head(LDA_en_df)
+LDA_dp_df<-integrated_LDA_df[grep("_dp",colnames(integrated_LDA_df))]
+head(LDA_dp_df)
+
+## Summary of genus that consistently enriched and depleted across all samples
+count(apply(LDA_en_df,MARGIN = 1, function(x) length(which(x==0)))) # 11 genera consistently enriched across all samples
+count(apply(LDA_dp_df,MARGIN = 1, function(x) length(which(x==0)))) # 13 genera consistently depleted across all samples
+
+## Summary of genus that specifically enriched in Ag 
+summary(apply(LDA_en_df[,1:6], MARGIN=1,function(x) length(which(x==0)))==0 &apply(LDA_en_df[,7:12], MARGIN=1,function(x) length(which(x==0)))==6) # 37 genera were specifically enriched in agriculture soil 
+
+
+## Summary of genus that specifically enriched in Forest samples 
+summary(apply(LDA_en_df[,1:6], MARGIN=1,function(x) length(which(x==0)))==6 &apply(LDA_en_df[,7:12], MARGIN=1,function(x) length(which(x==0)))==0) # 13 genera were specifically enriched in forest soil
+
+# what genera were specifically enriched in Agriculture and generate the dataframe
+dim(LDA_en_df)
+Ag_only_enriched<-LDA_en_df[apply(LDA_en_df[,1:6], MARGIN=1,function(x) length(which(x==0)))==0 &apply(LDA_en_df[,7:12], MARGIN=1,function(x) length(which(x==0)))==6,]
+Ag_only_enriched<-data.frame(Ag_only_enriched,Genus=rownames(Ag_only_enriched))
+
+# what genera were specifically enriched in forest and generate the dataframe
+dim(LDA_en_df)
+For_only_enriched<-LDA_en_df[apply(LDA_en_df[,1:6], MARGIN=1,function(x) length(which(x==0)))==6 &apply(LDA_en_df[,7:12], MARGIN=1,function(x) length(which(x==0)))==0,]
+For_only_enriched<-data.frame(For_only_enriched,Genus=rownames(For_only_enriched))
+
+## Generate the otu table and tax table for the original genera count, and combine otu and taxa table
+
+Lefse_genus_phyloseq<-import_mothur(mothur_shared_file = 'cultivar.trim.contigs.good.unique.good.filter.unique.precluster.pick.pds.wang.pick.tx.1.shared',mothur_constaxonomy_file = 'cultivar.trim.contigs.good.unique.good.filter.unique.precluster.pick.pds.wang.pick.tx.1.cons.taxonomy')
+colnames(tax_table(Lefse_genus_phyloseq))<-c('Kingdom','Phylum','Class','Order','Family','Genus')
+rank_names(Lefse_genus_phyloseq)
+genus_count<-data.frame(otu_table(Lefse_genus_phyloseq))
+head(genus_count)
+dim(genus_count)
+genus_taxonomy<-data.frame(tax_table(Lefse_genus_phyloseq))
+head(genus_taxonomy)
+dim(genus_taxonomy)
+identical(rownames(genus_count),rownames(genus_taxonomy))
+genus_count_and_tax<-data.frame(genus_count,Genus=genus_taxonomy$Genus)
+head(genus_count_and_tax)
+
+# ----->>>>>>>>>>>>>NEED TO ADD ROW NAMES information, but taxa is not unique
+
+dim(genus_count_and_tax)
+unique(genus_count_and_tax$Genus) 
+summary(genus_count_and_tax$Genus) # After summary, I realized that it is the Chloroflexi_unclassified that repetitive
+
+# just to combine two Chloroflexi_unclassified counts and sum the count as the new row.
+genus_count_and_tax_up<-genus_count_and_tax%>%
+  group_by(Genus)%>%
+  summarise_all(sum)
+genus_count_and_tax_up<-data.frame(genus_count_and_tax_up)
+dim(genus_count_and_tax_up)
+
+# 37 were specifically enriched in Agriculture rhizopshere, while 13 genus were seletively enriched in forest rhizosphere.
+
+# ---Extract count data for 37 genera that specifically enriched in agriculture soil
+# ---and summarize the count table. Meg suggest that it maybe informative to find out how many of the genera are only appeared in agriculture rhizosphere and none appeared in forest rhizosphere.
+Ag_only_enriched_count_and_tax<-join(Ag_only_enriched,genus_count_and_tax_up,by="Genus")
+dim(Ag_only_enriched_count_and_tax) # 136+13
+
+summary(apply(Ag_only_enriched_count_and_tax[,grep ("^Ag_CV",colnames(Ag_only_enriched_count_and_tax))], MARGIN=1,function(x) length(which(x==0))==0) & apply(Ag_only_enriched_count_and_tax[,grep ("^For_CV",colnames(Ag_only_enriched_count_and_tax))], MARGIN=1,function(x) length(which(x==0))==51))
+
+Ag_only_enriched_count_and_tax[apply(Ag_only_enriched_count_and_tax[,grep ("^Ag_CV",colnames(Ag_only_enriched_count_and_tax))], MARGIN=1,function(x) length(which(x==0))==0) & apply(Ag_only_enriched_count_and_tax[,grep ("^For_CV",colnames(Ag_only_enriched_count_and_tax))], MARGIN=1,function(x) length(which(x==0))==51),]
+Ag_only_enriched_count_and_tax
+# Based on above summary, I can tell that among the 37 genera that specifically enriched, only one of the genus has count across agriculture soil but zero across forest soil.
+
+
+
+# ---Extract count data for 13 genera that specifically enriched in agriculture soil
+# ---and summarize the count table.
+For_only_enriched_count_and_tax<-join(For_only_enriched,genus_count_and_tax_up,by="Genus")
+For_only_enriched_count_and_tax[1:13,27:30]
+dim(For_only_enriched_count_and_tax) # 13 row (genera) and 149 column(=136+13)
+
+summary(apply(For_only_enriched_count_and_tax[,grep ("^Ag_CV",colnames(For_only_enriched_count_and_tax))], MARGIN=1,function(x) length(which(x==0))==51) & apply(For_only_enriched_count_and_tax[,grep ("^For_CV",colnames(For_only_enriched_count_and_tax))], MARGIN=1,function(x) length(which(x==0))==0))
+
+For_only_enriched_count_and_tax[apply(For_only_enriched_count_and_tax[,grep ("^For_CV",colnames(For_only_enriched_count_and_tax))], MARGIN=1,function(x) length(which(x==0))==0) & apply(For_only_enriched_count_and_tax[,grep ("^For_CV",colnames(For_only_enriched_count_and_tax))], MARGIN=1,function(x) length(which(x==0))==51),]
+
+# Based on above summary, I can tell that among the 37 genera that specifically enriched, only one of the genus has count across agriculture soil but zero across forest soil.
+
+Specifically_enriched<-rbind(Ag_only_enriched_count_and_tax,For_only_enriched_count_and_tax)
+rownames(Specifically_enriched)<-Specifically_enriched$Genus
+
+#write.csv(Specifically_enriched,file = "/Users/fangliu/Documents/2016_cultivar_project/R_analysis/LefSe_analysis/Genus_level/Specifically_enriched_genus_count_table.csv",row.names = TRUE)
+
+```
