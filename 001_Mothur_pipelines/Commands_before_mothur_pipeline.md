@@ -104,7 +104,7 @@ paste --delimiters="\t" treatment_ID forward_ID reverse)_ID > cultivar.files
 .
 .
 
-### In terms of the detailed documentation, please find in the mothur.logfile**
+### In terms of the detailed documentation, please find in the ``mothur.1503000139.logfile``**
 
 
 
