@@ -926,17 +926,6 @@ plot_ordination(r_For_08_26_rarefied_cultivar_phyloseq,r_For_08_26_rarefied_cult
 dev.off()
 ```
 
-
-## heatmap using only LDA2_OTU_ID
-
-
-```{r}
-LDA2_OTU_ID<-read.csv(file="uniq_LDA2_OTUID_Ag_and_For.csv",header = TRUE) # 1766 OTUs
-LDA_rarefied_cultivar_phyloseq<-prune_taxa(as.character(LDA2_OTU_ID$OUT_ID),rarefied_cultivar_phyloseq)
-plot_heatmap(LDA_rarefied_cultivar_phyloseq, sample.label="Sample_ID",taxa.label = "Genus")
-```
-
-
 ## Constrained analysis of principle coordinate  Partial distance_based redundance analysis
 ## ------------------CAP analysis----------------------
 
