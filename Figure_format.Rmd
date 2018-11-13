@@ -1,0 +1,47 @@
+---
+title: "Compress supplemental figure size"
+author: "Fang Liu"
+date: "11/13/2018"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+library(pdftools)
+S1<-pdf_convert('/Users/fangliu/Documents/2016_cultivar_project/Article/Cultivar paper material send out for editing/Supplementary material/Sup_figure_gzip/Fig S1.pdf',format = 'tiff',filenames = 'Fig S1.tiff',dpi = 300)
+
+## lzw compression on tiff file using bash command
+
+``tiffcp -c lzw 'Fig S1.tiff' 'Fig S1_lzw.tiff``
+
+S2=pdf_convert('/Users/fangliu/Documents/2016_cultivar_project/Article/Cultivar paper material send out for editing/Supplementary material/Sup_figure_gzip/Fig S2.pdf',format = 'tiff',filenames = 'Fig S2.tiff',dpi = 300)
+
+``tiffcp -c lzw 'Fig S2.tiff' 'Fig S2_lzw.tiff``
+
+S3=pdf_convert('/Users/fangliu/Documents/2016_cultivar_project/Article/Cultivar paper material send out for editing/Supplementary material/Sup_figure_gzip/Fig S3.pdf',format = 'tiff',filenames = 'Fig S3.tiff',dpi = 600)
+
+``tiffcp -c lzw 'Fig S3.tiff' 'Fig S3_lzw.tiff``
+
+S4=pdf_convert('/Users/fangliu/Documents/2016_cultivar_project/Article/Cultivar paper material send out for editing/Supplementary material/Sup_figure_gzip/Fig S4.pdf',format = 'tiff',filenames = 'Fig S4.tiff',dpi = 300)
+
+``tiffcp -c lzw 'Fig S4.tiff' 'Fig S4_lzw.tiff``
+
+S5=pdf_convert('/Users/fangliu/Documents/2016_cultivar_project/Article/Cultivar paper material send out for editing/Supplementary material/Sup_figure_gzip/Fig S5.pdf',format = 'tiff',filenames = 'Fig S5.tiff',dpi = 300)
+
+``tiffcp -c lzw 'Fig S5.tiff' 'Fig S5_lzw.tiff``
+
+S6=pdf_convert('/Users/fangliu/Documents/2016_cultivar_project/Article/Cultivar paper material send out for editing/Supplementary material/Sup_figure_gzip/Fig S6.pdf',format = 'tiff',filenames = 'Fig S6.tiff',dpi = 600)
+
+``tiffcp -c lzw 'Fig S6.tiff' 'Fig S6_lzw.tiff``
+
+S7=pdf_convert('/Users/fangliu/Documents/2016_cultivar_project/Article/Cultivar paper material send out for editing/Supplementary material/Sup_figure_gzip/Fig S7.pdf',format = 'tiff',filenames = 'Fig S7.tiff',dpi = 300)
+
+``tiffcp -c lzw 'Fig S7.tiff' 'Fig S7_lzw.tiff``
+
+S8=pdf_convert('/Users/fangliu/Documents/2016_cultivar_project/Article/Cultivar paper material send out for editing/Supplementary material/Sup_figure_gzip/Fig S8.pdf',format = 'tiff',filenames = 'Fig S8.tiff',dpi = 600)
+
+``tiffcp -c lzw 'Fig S8.tiff' 'Fig S8_lzw.tiff``
+```
